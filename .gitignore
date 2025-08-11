@@ -48,3 +48,4 @@ Include/
 *.pdb
 *.aps
 *.md
+build_debug build_release
