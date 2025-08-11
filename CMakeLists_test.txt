@@ -1,0 +1,43 @@
+cmake_minimum_required(VERSION 3.10)
+project(TemplateMatcherTest)
+
+# 设置C++标准
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 查找OpenCV
+find_package(OpenCV REQUIRED)
+
+# 查找Qt5
+find_package(Qt5 COMPONENTS Core Widgets REQUIRED)
+
+# 设置包含目录
+include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(include)
+
+# 添加源文件
+set(SOURCES
+    src/TemplateMatcher.cpp
+    src/SIMDOptimization.cpp
+    test_matching.cpp
+)
+
+# 创建可执行文件
+add_executable(TemplateMatcherTest ${SOURCES})
+
+# 链接库
+target_link_libraries(TemplateMatcherTest 
+    ${OpenCV_LIBS}
+    Qt5::Core
+    Qt5::Widgets
+)
+
+# 设置编译选项
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(TemplateMatcherTest PRIVATE -O2 -march=native)
+endif()
+
+# 设置输出目录
+set_target_properties(TemplateMatcherTest PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+) 
