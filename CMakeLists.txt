@@ -31,6 +31,15 @@ find_package(OpenCV REQUIRED)
 # 查找Threads包 (用于pthread支持)
 find_package(Threads REQUIRED)
 
+# 查找OpenMP支持
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    message(STATUS "Found OpenMP: ${OpenMP_CXX_VERSION}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+else()
+    message(WARNING "OpenMP not found. Parallel optimization will not work.")
+endif()
+
 # 设置编译器特定选项
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # Debug模式 - 启用调试信息，禁用优化
@@ -46,17 +55,34 @@ else()
     if(MSVC)
         # Windows MSVC编译器 - 最佳优化
         add_compile_options(/O2 /DNDEBUG /GL /Gy /Gw /fp:fast)
+        # 使用更保守的CPU优化选项
         if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-            add_compile_options(/arch:AVX2 /arch:AVX512F)
+            # 检查是否支持AVX2，如果不支持则使用更基础的优化
+            add_compile_options(/arch:AVX)
         endif()
         # 链接时优化
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG")
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         # Linux/macOS GCC/Clang编译器 - 最佳优化
         add_compile_options(-O3 -DNDEBUG -ffast-math -funroll-loops -ftree-vectorize)
-        add_compile_options(-march=native -mtune=native)
-        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-            add_compile_options(-mavx2 -msse4.2 -mfma -mavx512f)
+        # 使用更保守的CPU优化选项，避免指令集不兼容
+        add_compile_options(-march=x86-64 -mtune=generic)
+        # 检查CPU支持的指令集，逐步启用
+        include(CheckCXXCompilerFlag)
+        check_cxx_compiler_flag("-msse4.2" COMPILER_SUPPORTS_SSE42)
+        if(COMPILER_SUPPORTS_SSE42)
+            add_compile_options(-msse4.2)
+            message(STATUS "启用SSE4.2支持")
+        endif()
+        check_cxx_compiler_flag("-mavx" COMPILER_SUPPORTS_AVX)
+        if(COMPILER_SUPPORTS_AVX)
+            add_compile_options(-mavx)
+            message(STATUS "启用AVX支持")
+        endif()
+        check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+        if(COMPILER_SUPPORTS_AVX2)
+            add_compile_options(-mavx2)
+            message(STATUS "启用AVX2支持")
         endif()
         # 链接时优化
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto")

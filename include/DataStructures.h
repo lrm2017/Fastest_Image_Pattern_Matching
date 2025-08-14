@@ -23,6 +23,10 @@ struct s_TemplData
     bool bIsPatternLearned;
     int iBorderColor;
     
+    // 用户绘制的矩形区域
+    cv::Rect userDefinedRect;
+    bool hasUserRect;
+    
     void clear()
     {
         std::vector<cv::Mat>().swap(vecPyramid);
@@ -30,6 +34,8 @@ struct s_TemplData
         std::vector<double>().swap(vecInvArea);
         std::vector<cv::Scalar>().swap(vecTemplMean);
         std::vector<bool>().swap(vecResultEqual1);
+        hasUserRect = false;
+        userDefinedRect = cv::Rect();
     }
     
     void resize(int iSize)
@@ -43,6 +49,8 @@ struct s_TemplData
     s_TemplData()
     {
         bIsPatternLearned = false;
+        hasUserRect = false;
+        userDefinedRect = cv::Rect();
     }
 };
 

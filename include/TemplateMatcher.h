@@ -44,6 +44,11 @@ public:
     
     // 清除模板数据
     void clearPattern();
+    
+    // 用户矩形区域管理
+    void setUserDefinedRect(const cv::Rect& rect);
+    cv::Rect getUserDefinedRect() const;
+    bool hasUserDefinedRect() const;
 
 private:
     // 核心算法函数
@@ -51,6 +56,13 @@ private:
     void MatchTemplate(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer, bool bUseSIMD);
     void getRotatedROI(cv::Mat& matSrc, cv::Size size, cv::Point2f ptLT, double dAngle, cv::Mat& matROI);
     void CCOEFF_Denominator(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer);
+    
+    // 优化版本
+    void CCOEFF_Denominator_Optimized(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer);
+    void CCOEFF_Denominator_SIMD(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer);
+    void CCOEFF_Denominator_Parallel(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer);
+    void CCOEFF_Denominator_Parallel_Advanced(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer);
+    void CCOEFF_Denominator_Smart(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer);
     cv::Size getBestRotationSize(cv::Size sizeSrc, cv::Size sizeDst, double dRAngle);
     cv::Point2f ptRotatePt2f(cv::Point2f ptInput, cv::Point2f ptOrg, double dAngle);
     void filterWithScore(std::vector<s_MatchParameter>* vec, double dScore);

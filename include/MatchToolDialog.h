@@ -117,9 +117,41 @@ private:
     void drawDashLine(cv::Mat& matDraw, cv::Point2d ptStart, cv::Point2d ptEnd, cv::Scalar color1, cv::Scalar color2);
     void drawMarkCross(cv::Mat& matDraw, double x, double y, int length, cv::Scalar color, int thickness);
     
+    // 矩形绘制相关
+    void setupTemplateViewMouseEvents();
+    void onTemplateViewMousePress(QMouseEvent* event);
+    void onTemplateViewMouseMove(QMouseEvent* event);
+    void onTemplateViewMouseRelease(QMouseEvent* event);
+    void drawUserRectOnTemplate();
+    void drawUserRectOnResults();
+    void addCornerMarkers(const cv::Rect& rect);
+    void addSizeLabel(const cv::Rect& rect);
+    
+    // 多边形选择相关
+    void setupPolygonSelection();
+    void onTemplateViewRightClick(QMouseEvent* event);
+    void startPolygonSelection();
+    void finishPolygonSelection();
+    void drawPolygonOnTemplate();
+    void drawPolygonOnResults();
+    void drawUserPolygonOnResults(const s_SingleTargetMatch& result, cv::Mat& displayImage);
+    void addPolygonPoint(const QPoint& pos);
+    void clearPolygon();
+    
+    cv::Rect transformRectToResult(const cv::Rect& templateRect, const s_SingleTargetMatch& match);
+    void clearUserRect();
+    
+    // 多边形变换相关
+    std::vector<cv::Point2f> transformPolygonToResult(const std::vector<cv::Point2f>& templatePolygon, const s_SingleTargetMatch& match);
+    void clearUserPolygon();
+    
     // 缩放相关函数
     void applyZoom();
     void applyZoomAtMousePosition(const QPoint& mousePos);
+    
+    // 模板视图缩放相关函数
+    void applyTemplateZoom();
+    void applyTemplateZoomAtMousePosition(const QPoint& mousePos);
     
     // 状态栏更新函数
     void updateSourceImageLabel();
@@ -175,6 +207,11 @@ private:
     double m_minScale;
     double m_maxScale;
     
+    // 模板视图缩放相关变量
+    double m_templateScale;
+    double m_templateMinScale;
+    double m_templateMaxScale;
+    
     // 状态栏标签
     QLabel* m_sourceImageLabel;
     QLabel* m_templateImageLabel;
@@ -182,4 +219,16 @@ private:
     
     // 定时器
     QElapsedTimer m_executionTimer;
+    
+    // 矩形绘制相关变量
+    bool m_isDrawingRect;
+    QPoint m_rectStartPoint;
+    QPoint m_rectEndPoint;
+    cv::Rect m_userDefinedRect;
+    bool m_hasUserRect;
+    
+    // 多边形选择相关变量
+    bool m_isSelectingPolygon;
+    std::vector<cv::Point2f> m_polygonPoints;
+    bool m_hasUserPolygon;
 }; 

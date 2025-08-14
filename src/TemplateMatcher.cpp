@@ -8,6 +8,7 @@
 #include <immintrin.h>
 #include <cfloat>
 #include <QDebug>
+#include <omp.h>  // 添加OpenMP支持
 
 // 添加缺失的比较函数实现
 bool compareScoreBig2Small(const s_MatchParameter& lhs, const s_MatchParameter& rhs) 
@@ -519,7 +520,8 @@ void TemplateMatcher::MatchTemplate(cv::Mat& matSrc, s_TemplData* pTemplData, cv
 	absdiff(matResult, matResult, diff);
 	double dMaxValue;
 	minMaxLoc(diff, 0, &dMaxValue, 0,0);*/
-	CCOEFF_Denominator (matSrc, pTemplData, matResult, iLayer);
+	CCOEFF_Denominator(matSrc, pTemplData, matResult, iLayer);
+
 }
 
 void TemplateMatcher::CCOEFF_Denominator(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer)
@@ -593,6 +595,307 @@ void TemplateMatcher::CCOEFF_Denominator(cv::Mat& matSrc, s_TemplData* pTemplDat
 			rrow[j] = (float)num;
 		}
 	}
+}
+
+// 优化版本1：基础优化（内存访问优化 + 数据类型优化）
+void TemplateMatcher::CCOEFF_Denominator_Optimized(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer)
+{
+    if (pTemplData->vecResultEqual1[iLayer]) {
+        matResult = cv::Scalar::all(1);
+        return;
+    }
+    
+    // 使用double类型保持与原始版本一致
+    cv::Mat sum, sqsum;
+    cv::integral(matSrc, sum, sqsum, CV_64F);
+    
+    // 获取模板尺寸
+    int templWidth = pTemplData->vecPyramid[iLayer].cols;
+    int templHeight = pTemplData->vecPyramid[iLayer].rows;
+    
+    // 预计算步长（以double为单位）
+    int sumstep = sum.data ? (int)(sum.step / sizeof(double)) : 0;
+    int sqstep = sqsum.data ? (int)(sqsum.step / sizeof(double)) : 0;
+    
+	double* q0 = (double*)sqsum.data;
+	double* q1 = q0 + pTemplData->vecPyramid[iLayer].cols;
+	double* q2 = (double*)(sqsum.data + pTemplData->vecPyramid[iLayer].rows * sqsum.step);
+	double* q3 = q2 + pTemplData->vecPyramid[iLayer].cols;
+
+	double* p0 = (double*)sum.data;
+	double* p1 = p0 + pTemplData->vecPyramid[iLayer].cols;
+	double* p2 = (double*)(sum.data + pTemplData->vecPyramid[iLayer].rows*sum.step);
+	double* p3 = p2 + pTemplData->vecPyramid[iLayer].cols;
+
+    // 预计算常量
+    double dTemplMean0 = pTemplData->vecTemplMean[iLayer][0];
+    double dTemplNorm = pTemplData->vecTemplNorm[iLayer];
+    double dInvArea = pTemplData->vecInvArea[iLayer];
+    
+    // 主循环：使用行指针优化内存访问
+    for (int i = 0; i < matResult.rows; i++) {
+        float* rrow = matResult.ptr<float>(i);
+        int idx = i * sumstep;
+        int idx2 = i * sqstep;
+        
+        for (int j = 0; j < matResult.cols; j++, idx++, idx2++) {
+            double num = rrow[j], t;
+            double wndMean2 = 0, wndSum2 = 0;
+            
+            // 计算窗口均值（使用积分图像）
+			t = p0[idx] - p1[idx] - p2[idx] + p3[idx];
+            wndMean2 += t * t;
+            num -= t * dTemplMean0;
+            wndMean2 *= dInvArea;
+            
+            // 计算窗口平方和（使用积分图像）
+			t = q0[idx2] - q1[idx2] - q2[idx2] + q3[idx2];
+            wndSum2 += t;
+            
+            // 计算归一化因子
+            double diff2 = std::max(wndSum2 - wndMean2, 0.0);
+            if (diff2 <= std::min(0.5, 10 * FLT_EPSILON * wndSum2)) {
+                t = 0; // 避免舍入误差
+            } else {
+                t = std::sqrt(diff2) * dTemplNorm;
+            }
+            
+            // 归一化处理
+            if (std::fabs(num) < t) {
+                num /= t;
+            } else if (std::fabs(num) < t * 1.125) {
+                num = num > 0 ? 1.0 : -1.0;
+            } else {
+                num = 0;
+            }
+            
+            rrow[j] = (float)num;
+        }
+    }
+}
+
+// 优化版本2：SIMD优化（使用AVX2指令集）
+// 注意：需要编译器支持AVX2指令集
+/*
+void TemplateMatcher::CCOEFF_Denominator_SIMD(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer)
+{
+    // SIMD实现代码...
+}
+*/
+
+// 优化版本3：OpenMP并行化
+void TemplateMatcher::CCOEFF_Denominator_Parallel(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer)
+{
+    if (pTemplData->vecResultEqual1[iLayer]) {
+        matResult = cv::Scalar::all(1);
+        return;
+    }
+    
+    // 使用double类型保持与原始版本一致
+    cv::Mat sum, sqsum;
+    cv::integral(matSrc, sum, sqsum, CV_64F);
+    
+    // 获取模板尺寸
+    int templWidth = pTemplData->vecPyramid[iLayer].cols;
+    int templHeight = pTemplData->vecPyramid[iLayer].rows;
+    
+    // 预计算步长
+    int sumstep = sum.data ? (int)(sum.step / sizeof(double)) : 0;
+    int sqstep = sqsum.data ? (int)(sqsum.step / sizeof(double)) : 0;
+    
+	double* q0 = (double*)sqsum.data;
+	double* q1 = q0 + pTemplData->vecPyramid[iLayer].cols;
+	double* q2 = (double*)(sqsum.data + pTemplData->vecPyramid[iLayer].rows * sqsum.step);
+	double* q3 = q2 + pTemplData->vecPyramid[iLayer].cols;
+
+	double* p0 = (double*)sum.data;
+	double* p1 = p0 + pTemplData->vecPyramid[iLayer].cols;
+	double* p2 = (double*)(sum.data + pTemplData->vecPyramid[iLayer].rows*sum.step);
+	double* p3 = p2 + pTemplData->vecPyramid[iLayer].cols;
+
+
+    // 预计算常量
+    double dTemplMean0 = pTemplData->vecTemplMean[iLayer][0];
+    double dTemplNorm = pTemplData->vecTemplNorm[iLayer];
+    double dInvArea = pTemplData->vecInvArea[iLayer];
+    
+    // 优化：使用更细粒度的并行化策略
+    // 根据图像大小动态调整并行化策略
+    int totalPixels = matResult.rows * matResult.cols;
+    int numThreads = omp_get_max_threads();
+    
+    if (totalPixels < 10000 || numThreads <= 1) {
+        // 小图像或单线程：使用串行版本
+        CCOEFF_Denominator_Optimized(matSrc, pTemplData, matResult, iLayer);
+        return;
+    }
+    
+    // 大图像：使用优化的并行化策略
+    // 策略1：按块并行化，减少内存访问冲突
+    int blockSize = std::max(16, matResult.rows / (numThreads * 2));
+    
+    #pragma omp parallel for schedule(dynamic, blockSize)
+    for (int i = 0; i < matResult.rows; i++) {
+        float* rrow = matResult.ptr<float>(i);
+        int idx = i * sumstep;
+        int idx2 = i * sqstep;
+        
+        for (int j = 0; j < matResult.cols; j++, idx++, idx2++) {
+            double num = rrow[j], t;
+            double wndMean2 = 0, wndSum2 = 0;
+            
+            // 计算窗口均值（使用积分图像）
+			t = p0[idx] - p1[idx] - p2[idx] + p3[idx];
+            wndMean2 += t * t;
+            num -= t * dTemplMean0;
+            wndMean2 *= dInvArea;
+            
+            // 计算窗口平方和（使用积分图像）
+			t = q0[idx2] - q1[idx2] - q2[idx2] + q3[idx2];
+            wndSum2 += t;
+            
+            // 计算归一化因子
+            double diff2 = std::max(wndSum2 - wndMean2, 0.0);
+            if (diff2 <= std::min(0.5, 10 * FLT_EPSILON * wndSum2)) {
+                t = 0;
+            } else {
+                t = std::sqrt(diff2) * dTemplNorm;
+            }
+            
+            // 归一化处理
+            if (std::fabs(num) < t) {
+                num /= t;
+            } else if (std::fabs(num) < t * 1.125) {
+                num = num > 0 ? 1.0 : -1.0;
+            } else {
+                num = 0;
+            }
+            
+            rrow[j] = (float)num;
+        }
+    }
+}
+
+// 优化版本4：高级并行化策略
+void TemplateMatcher::CCOEFF_Denominator_Parallel_Advanced(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer)
+{
+    if (pTemplData->vecResultEqual1[iLayer]) {
+        matResult = cv::Scalar::all(1);
+        return;
+    }
+    
+    // 使用double类型保持与原始版本一致
+    cv::Mat sum, sqsum;
+    cv::integral(matSrc, sum, sqsum, CV_64F);
+    
+    // 获取模板尺寸
+    int templWidth = pTemplData->vecPyramid[iLayer].cols;
+    int templHeight = pTemplData->vecPyramid[iLayer].rows;
+    
+    // 预计算步长
+    int sumstep = sum.data ? (int)(sum.step / sizeof(double)) : 0;
+    int sqstep = sqsum.data ? (int)(sqsum.step / sizeof(double)) : 0;
+    
+	double* q0 = (double*)sqsum.data;
+	double* q1 = q0 + pTemplData->vecPyramid[iLayer].cols;
+	double* q2 = (double*)(sqsum.data + pTemplData->vecPyramid[iLayer].rows * sqsum.step);
+	double* q3 = q2 + pTemplData->vecPyramid[iLayer].cols;
+
+	double* p0 = (double*)sum.data;
+	double* p1 = p0 + pTemplData->vecPyramid[iLayer].cols;
+	double* p2 = (double*)(sum.data + pTemplData->vecPyramid[iLayer].rows*sum.step);
+	double* p3 = p2 + pTemplData->vecPyramid[iLayer].cols;
+
+    // 预计算常量
+    double dTemplMean0 = pTemplData->vecTemplMean[iLayer][0];
+    double dTemplNorm = pTemplData->vecTemplNorm[iLayer];
+    double dInvArea = pTemplData->vecInvArea[iLayer];
+    
+    // 智能并行化策略
+    int numThreads = omp_get_max_threads();
+    int totalPixels = matResult.rows * matResult.cols;
+    
+    if (totalPixels < 5000 || numThreads <= 1) {
+        // 小图像：使用串行版本
+        CCOEFF_Denominator_Optimized(matSrc, pTemplData, matResult, iLayer);
+        return;
+    }
+    
+    // 大图像：使用优化的并行化策略
+    // 策略：按块并行化，每个块包含多行，减少线程切换开销
+    int optimalBlockSize = std::max(32, matResult.rows / (numThreads * 4));
+    
+    #pragma omp parallel for schedule(dynamic, optimalBlockSize)
+    for (int blockStart = 0; blockStart < matResult.rows; blockStart += optimalBlockSize) {
+        int blockEnd = std::min(blockStart + optimalBlockSize, matResult.rows);
+        
+        for (int i = blockStart; i < blockEnd; i++) {
+            float* rrow = matResult.ptr<float>(i);
+            int idx = i * sumstep;
+            int idx2 = i * sqstep;
+            
+            for (int j = 0; j < matResult.cols; j++, idx++, idx2++) {
+                double num = rrow[j], t;
+                double wndMean2 = 0, wndSum2 = 0;
+                
+                // 计算窗口均值（使用积分图像）
+                t = p0[idx] - p1[idx] - p2[idx] + p3[idx];
+                wndMean2 += t * t;
+                num -= t * dTemplMean0;
+                wndMean2 *= dInvArea;
+                
+                // 计算窗口平方和（使用积分图像）
+                t = q0[idx2] - q1[idx2] - q2[idx2] + q3[idx2];
+                wndSum2 += t;
+                
+                // 计算归一化因子
+                double diff2 = std::max(wndSum2 - wndMean2, 0.0);
+                if (diff2 <= std::min(0.5, 10 * FLT_EPSILON * wndSum2)) {
+                    t = 0;
+                } else {
+                    t = std::sqrt(diff2) * dTemplNorm;
+                }
+                
+                // 归一化处理
+                if (std::fabs(num) < t) {
+                    num /= t;
+                } else if (std::fabs(num) < t * 1.125) {
+                    num = num > 0 ? 1.0 : -1.0;
+                } else {
+                    num = 0;
+                }
+                
+                rrow[j] = (float)num;
+            }
+        }
+    }
+}
+
+// 智能选择最优版本的函数
+void TemplateMatcher::CCOEFF_Denominator_Smart(cv::Mat& matSrc, s_TemplData* pTemplData, cv::Mat& matResult, int iLayer)
+{
+    // 根据图像大小和系统能力选择最优版本
+    int imageSize = matSrc.rows * matSrc.cols;
+    
+    // 小图像：使用基础优化版本
+    if (imageSize < 10000) {  // 100x100
+        CCOEFF_Denominator_Optimized(matSrc, pTemplData, matResult, iLayer);
+        return;
+    }
+    
+    // 中等图像：使用高级并行化版本
+    if (imageSize < 100000) {  // 316x316
+        CCOEFF_Denominator_Parallel_Advanced(matSrc, pTemplData, matResult, iLayer);
+        return;
+    }
+    
+    // 大图像：使用高级并行化版本（如果支持）
+    #ifdef __AVX2__
+        //CCOEFF_Denominator_SIMD(matSrc, pTemplData, matResult, iLayer); // 暂时注释掉SIMD版本
+        CCOEFF_Denominator_Parallel_Advanced(matSrc, pTemplData, matResult, iLayer); // 使用高级并行化版本作为后备
+    #else
+        CCOEFF_Denominator_Parallel_Advanced(matSrc, pTemplData, matResult, iLayer);
+    #endif
 }
 
 cv::Size TemplateMatcher::getBestRotationSize(cv::Size sizeSrc, cv::Size sizeDst, double dRAngle)
@@ -915,4 +1218,21 @@ cv::Point TemplateMatcher::getNextMaxLoc(cv::Mat& matResult, cv::Point ptMaxLoc,
 	cv::Point ptReturn;
 	blockMax.GetMaxValueLoc (dMaxValue, ptReturn);
 	return ptReturn;
+}
+
+// 用户矩形区域管理方法实现
+void TemplateMatcher::setUserDefinedRect(const cv::Rect& rect)
+{
+    m_TemplData.userDefinedRect = rect;
+    m_TemplData.hasUserRect = true;
+}
+
+cv::Rect TemplateMatcher::getUserDefinedRect() const
+{
+    return m_TemplData.userDefinedRect;
+}
+
+bool TemplateMatcher::hasUserDefinedRect() const
+{
+    return m_TemplData.hasUserRect;
 }
