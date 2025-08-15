@@ -1,0 +1,1 @@
+cmd_/home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/filter/module/Module.symvers := sed 's/\.ko$$/\.o/' /home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/filter/module/modules.order | scripts/mod/modpost -m -a  -o /home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/filter/module/Module.symvers -e -i Module.symvers   -T -

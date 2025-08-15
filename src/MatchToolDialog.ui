@@ -44,6 +44,13 @@
             </property>
            </widget>
           </item>
+          <item>
+           <widget class="QPushButton" name="loadCamButton">
+            <property name="text">
+             <string>打开摄像头</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

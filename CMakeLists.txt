@@ -93,6 +93,8 @@ endif()
 
 # 包含目录
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/DVPCamera/Demo)
+include_directories(${CMAKE_SOURCE_DIR}/DVPCamera)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 # 源文件
@@ -101,6 +103,7 @@ set(SOURCES
     src/MatchToolDialog.cpp
     src/TemplateMatcher.cpp
     src/SIMDOptimization.cpp
+    src/CameraPreviewDialog.cpp
 )
 
 # 头文件
@@ -109,11 +112,22 @@ set(HEADERS
     include/TemplateMatcher.h
     include/SIMDOptimization.h
     include/DataStructures.h
+    include/CameraPreviewDialog.h
+    DVPCamera/Demo/DVPCamera.h
 )
 
 # UI文件
 set(UI_FILES
-    src/MatchToolDialog.ui
+    ui/MatchToolDialog.ui
+)
+
+
+# 设置库目录
+link_directories(
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/DVPCamera
+    # ${CMAKE_SOURCE_DIR}/DVPCamera/bin
+    # ${CMAKE_SOURCE_DIR}/DVPCamera/bin/Linux64_x64
 )
 
 # 创建可执行文件
@@ -126,13 +140,24 @@ target_link_libraries(${PROJECT_NAME}
     Qt${QT_VERSION}::Widgets
     Qt${QT_VERSION}::Gui
     Threads::Threads
-)
+    ${CMAKE_SOURCE_DIR}/DVPCamera/libdvp.so
+    ${CMAKE_SOURCE_DIR}/DVPCamera/libhzd.so
+    )
 
 # 设置Qt自动生成的文件
 set_target_properties(${PROJECT_NAME} PROPERTIES
     AUTOMOC ON
     AUTOUIC ON
     AUTORCC ON
+)
+
+# # 指定UIC工具路径
+# set(CMAKE_UIC_EXECUTABLE "/usr/lib/qt5/bin/uic")
+
+# 设置运行时库路径，确保能找到DVP相机库
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    INSTALL_RPATH "${CMAKE_SOURCE_DIR}/DVPCamera;${CMAKE_SOURCE_DIR}/DVPCamera/bin;${CMAKE_SOURCE_DIR}/DVPCamera/bin/Linux64_x64;${CMAKE_SOURCE_DIR}/DVPCamera/filter;${CMAKE_SOURCE_DIR}/DVPCamera/dtpcie"
+    BUILD_WITH_INSTALL_RPATH TRUE
 )
 
 # 复制资源文件到输出目录

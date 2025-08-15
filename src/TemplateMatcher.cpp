@@ -255,7 +255,7 @@ std::vector<s_SingleTargetMatch> TemplateMatcher::match(const cv::Mat& sourceIma
     //展示第一层结果
 
 	//第一阶段结束
-	bool bSubPixelEstimation = 0;//m_bSubPixel.GetCheck ();
+	bool bSubPixelEstimation = m_bSubPixelEstimation;
 	int iStopLayer = 0;//m_bStopLayer1 ? 1 : 0; //设置为1时：粗匹配，牺牲精度提升速度。
 	//int iSearchSize = min (m_iMaxPos + MATCH_CANDIDATE_NUM, (int)vecMatchParameter.size ());//可能不需要搜尋到全部 太浪費時間
 	std::vector<s_MatchParameter> vecAllResult;

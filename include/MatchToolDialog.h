@@ -29,14 +29,20 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QPainter>
+#include <QTabWidget>
 
 #include "TemplateMatcher.h"
 #include "DataStructures.h"
+#include "CameraPreviewDialog.h"
 
 // 前向声明
 namespace Ui {
     class MatchToolDialog;
 }
+
+// DsCamera模块前向声明
+class Driver_Camera;
+class CameraDriver;
 
 QT_BEGIN_NAMESPACE
 class QGraphicsScene;
@@ -50,6 +56,7 @@ class QDoubleSpinBox;
 class QComboBox;
 class QStatusBar;
 class QMenuBar;
+class QTabWidget;
 QT_END_NAMESPACE
 
 // Qt版本的匹配工具对话框
@@ -76,8 +83,22 @@ protected:
 private slots:
     // UI事件处理
     void onLoadSrcButtonClicked();
+    void onLoadCamButtonClicked();
     void onLoadDstButtonClicked();
     void onExecuteButtonClicked();
+    
+    // 摄像头相关槽函数
+    void onCameraImageCaptured(const QImage& image);
+    
+    /*
+    void onScanCameraButtonClicked();
+    void onOpenCameraButtonClicked();
+    void onCloseCameraButtonClicked();
+    void onCaptureButtonClicked();
+    void onCameraFrameReceived(const QImage& frame, float frameRate);
+    void onCameraScanResultsReceived(const QVector<QString>& cameraList);
+    void onSourceTabChanged(int index);
+    */
 
 private:
     // UI初始化
@@ -86,6 +107,7 @@ private:
     void setupToolBar();
     void setupStatusBar();
     void setupConnections();
+    void setupCameraConnections();
     
     // 图像处理
     void refreshSourceView();
@@ -106,12 +128,13 @@ private:
     // 图像转换
     QImage matToQImage(const cv::Mat& mat);
     QPixmap matToQPixmap(const cv::Mat& mat);
+    cv::Mat qImageToMat(const QImage& qimage);
     
     // 结果显示
     void refreshSourceViewWithResults();
     
     // 清除结果
-        void onClearButtonClicked();
+    void onClearButtonClicked();
     
     // 绘制辅助函数
     void drawDashLine(cv::Mat& matDraw, cv::Point2d ptStart, cv::Point2d ptEnd, cv::Scalar color1, cv::Scalar color2);
@@ -164,8 +187,14 @@ private:
     void saveImagePaths();
     void loadImagePaths();
     void onParameterChanged();
-
- 
+    
+    // 摄像头相关函数
+    /*
+    void initializeCamera();
+    void updateCameraStatus(const QString& status);
+    void enableCameraControls(bool enable);
+    void refreshCameraView(const QImage& frame);
+    */
 
 private:
     // UI指针
@@ -182,6 +211,7 @@ private:
     // 图像场景
     QGraphicsScene* m_sourceScene;
     QGraphicsScene* m_templateScene;
+    QGraphicsScene* m_cameraScene;
     
     // 状态
     bool m_sourceImageLoaded;
@@ -231,4 +261,13 @@ private:
     bool m_isSelectingPolygon;
     std::vector<cv::Point2f> m_polygonPoints;
     bool m_hasUserPolygon;
+    
+    // 摄像头相关变量
+    /*
+    Driver_Camera* m_cameraDriver;
+    bool m_cameraConnected;
+    bool m_cameraStreaming;
+    QImage m_lastCameraFrame;
+    QTimer* m_cameraUpdateTimer;
+    */
 }; 

@@ -1,0 +1,1 @@
+cmd_/home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/dtpcie/module/modules.order := {   echo /home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/dtpcie/module/dt_pcie.ko; :; } | awk '!x[$$0]++' - > /home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/dtpcie/module/modules.order

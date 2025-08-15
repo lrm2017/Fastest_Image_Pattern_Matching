@@ -20,7 +20,7 @@
       <enum>Qt::Horizontal</enum>
      </property>
      <widget class="QWidget" name="leftWidget" native="true">
-      <layout class="QVBoxLayout" name="leftLayout">
+      <layout class="QHBoxLayout" name="horizontalLayout">
        <item>
         <widget class="QGroupBox" name="groupBoxSource">
          <property name="title">
@@ -32,7 +32,7 @@
             <property name="minimumSize">
              <size>
               <width>400</width>
-              <height>300</height>
+              <height>200</height>
              </size>
             </property>
            </widget>
@@ -44,29 +44,10 @@
             </property>
            </widget>
           </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="groupBoxTemplate">
-         <property name="title">
-          <string>模板图像</string>
-         </property>
-         <layout class="QVBoxLayout" name="templateLayout">
           <item>
-           <widget class="QGraphicsView" name="templateView">
-            <property name="minimumSize">
-             <size>
-              <width>400</width>
-              <height>200</height>
-             </size>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="loadDstButton">
+           <widget class="QPushButton" name="loadCamButton">
             <property name="text">
-             <string>加载模板图像</string>
+             <string>打开摄像头</string>
             </property>
            </widget>
           </item>
@@ -76,125 +57,165 @@
       </layout>
      </widget>
      <widget class="QWidget" name="rightWidget" native="true">
-      <layout class="QVBoxLayout" name="rightLayout">
+      <layout class="QVBoxLayout" name="rightLayout" stretch="1,1">
        <item>
-        <widget class="QGroupBox" name="groupBoxParameters">
-         <property name="title">
-          <string>参数设置</string>
-         </property>
-         <layout class="QGridLayout" name="parametersLayout">
-          <item row="0" column="0">
-           <widget class="QLabel" name="labelMaxPositions">
-            <property name="text">
-             <string>最大位置数:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="1">
-           <widget class="QSpinBox" name="maxPositionsSpinBox">
-            <property name="minimum">
-             <number>1</number>
-            </property>
-            <property name="maximum">
-             <number>200</number>
-            </property>
-            <property name="value">
-             <number>70</number>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="0">
-           <widget class="QLabel" name="labelScore">
-            <property name="text">
-             <string>相似度阈值:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="1">
-           <widget class="QDoubleSpinBox" name="scoreSpinBox">
-            <property name="decimals">
-             <number>2</number>
-            </property>
-            <property name="maximum">
-             <double>1.000000000000000</double>
-            </property>
-            <property name="value">
-             <double>0.500000000000000</double>
-            </property>
-           </widget>
-          </item>
-          <item row="2" column="0">
-           <widget class="QLabel" name="labelMaxOverlap">
-            <property name="text">
-             <string>最大重叠度:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="2" column="1">
-           <widget class="QDoubleSpinBox" name="maxOverlapSpinBox">
-            <property name="decimals">
-             <number>2</number>
-            </property>
-            <property name="maximum">
-             <double>1.000000000000000</double>
-            </property>
-            <property name="value">
-             <double>0.000000000000000</double>
-            </property>
-           </widget>
-          </item>
-          <item row="3" column="0">
-           <widget class="QLabel" name="labelToleranceAngle">
-            <property name="text">
-             <string>角度容差:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="3" column="1">
-           <widget class="QDoubleSpinBox" name="toleranceAngleSpinBox">
-            <property name="decimals">
-             <number>1</number>
-            </property>
-            <property name="maximum">
-             <double>360.000000000000000</double>
-            </property>
-            <property name="value">
-             <double>0.000000000000000</double>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="0">
-           <widget class="QLabel" name="labelMinReduceArea">
-            <property name="text">
-             <string>最小减少区域:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="1">
-           <widget class="QSpinBox" name="minReduceAreaSpinBox">
-            <property name="minimum">
-             <number>16</number>
-            </property>
-            <property name="maximum">
-             <number>1024</number>
-            </property>
-            <property name="value">
-             <number>256</number>
-            </property>
-           </widget>
-          </item>
-          <item row="5" column="0" colspan="2">
-           <widget class="QCheckBox" name="useSIMDCheckBox">
-            <property name="text">
-             <string>使用SIMD优化</string>
-            </property>
-            <property name="checked">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
+        <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <item>
+          <widget class="QGroupBox" name="groupBoxTemplate">
+           <property name="title">
+            <string>模板图像</string>
+           </property>
+           <layout class="QVBoxLayout" name="templateLayout">
+            <item>
+             <widget class="QGraphicsView" name="templateView">
+              <property name="minimumSize">
+               <size>
+                <width>400</width>
+                <height>300</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="loadDstButton">
+              <property name="text">
+               <string>加载模板图像</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="groupBoxParameters">
+           <property name="title">
+            <string>参数设置</string>
+           </property>
+           <layout class="QGridLayout" name="parametersLayout">
+            <item row="0" column="0">
+             <widget class="QLabel" name="labelMaxPositions">
+              <property name="text">
+               <string>最大位置数:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QSpinBox" name="maxPositionsSpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>200</number>
+              </property>
+              <property name="value">
+               <number>70</number>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="labelMinReduceArea">
+              <property name="text">
+               <string>最小减少区域:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="labelMaxOverlap">
+              <property name="text">
+               <string>最大重叠度:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QDoubleSpinBox" name="maxOverlapSpinBox">
+              <property name="decimals">
+               <number>2</number>
+              </property>
+              <property name="maximum">
+               <double>1.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>0.100000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="labelScore">
+              <property name="text">
+               <string>相似度阈值:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QDoubleSpinBox" name="scoreSpinBox">
+              <property name="decimals">
+               <number>2</number>
+              </property>
+              <property name="maximum">
+               <double>1.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>0.700000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="labelToleranceAngle">
+              <property name="text">
+               <string>角度容差:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QDoubleSpinBox" name="toleranceAngleSpinBox">
+              <property name="decimals">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <double>360.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>180.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QSpinBox" name="minReduceAreaSpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>10000</number>
+              </property>
+              <property name="value">
+               <number>256</number>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="0" colspan="2">
+             <widget class="QCheckBox" name="useSIMDCheckBox">
+              <property name="text">
+               <string>使用SIMD优化</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="0">
+             <widget class="QCheckBox" name="subPixelCheckBox">
+              <property name="text">
+               <string>亚像素</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <widget class="QGroupBox" name="groupBoxResults">
@@ -263,8 +284,14 @@
     </widget>
    </item>
    <item>
-    <widget class="QStatusBar" name="statusBar"/>
+    <widget class="QStatusBar" name="statusBar">
+     <property name="layoutDirection">
+      <enum>Qt::LeftToRight</enum>
+     </property>
+    </widget>
    </item>
   </layout>
  </widget>
-</ui> 
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,2 @@
+/home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/dtpcie/module/pcidrv.o /home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/dtpcie/module/dsdebug.o /home/lrm/RK3568/DVP2-Linux64_250625/DVP2-Linux64/dtpcie/module/control.o
+

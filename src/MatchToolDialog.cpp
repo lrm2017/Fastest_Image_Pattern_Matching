@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <chrono>
 #include <QSettings>
+#include <QDebug>
 
 MatchToolDialog::MatchToolDialog(QWidget *parent)
     : QDialog(parent)
@@ -34,10 +35,16 @@ MatchToolDialog::MatchToolDialog(QWidget *parent)
     , m_hasUserRect(false)
     , m_isSelectingPolygon(false)
     , m_hasUserPolygon(false)
+    // , m_cameraDriver(nullptr)
+    // , m_cameraConnected(false)
+    // , m_cameraStreaming(false)
+    // , m_cameraUpdateTimer(nullptr)
 {
     ui->setupUi(this);
     setupUI();
     setupConnections();
+    // setupCameraConnections();
+    // initializeCamera();
 }
 
 MatchToolDialog::~MatchToolDialog()
@@ -64,9 +71,13 @@ void MatchToolDialog::setupUI()
     if (!m_templateScene) {
         m_templateScene = new QGraphicsScene(this);
     }
+    // if (!m_cameraScene) {
+    //     m_cameraScene = new QGraphicsScene(this);
+    // }
     
     ui->sourceView->setScene(m_sourceScene);
     ui->templateView->setScene(m_templateScene);
+    // ui->cameraView->setScene(m_cameraScene);
     
     // 设置渲染选项
     ui->sourceView->setRenderHint(QPainter::Antialiasing);
@@ -96,51 +107,17 @@ void MatchToolDialog::setupUI()
     ui->sourceView->viewport()->installEventFilter(this);
     ui->templateView->viewport()->installEventFilter(this);
     
+    // 设置模板视图的鼠标事件处理
+    setupTemplateViewMouseEvents();
+    
     // 设置源视图的右键菜单
     ui->sourceView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->sourceView, &QGraphicsView::customContextMenuRequested, this, [this](const QPoint& pos) {
-        if (m_hasUserRect) {
-            QMenu contextMenu(this);
-            QAction* clearAction = contextMenu.addAction("清除用户矩形");
-            QAction* selectedAction = contextMenu.exec(ui->sourceView->mapToGlobal(pos));
-            
-            if (selectedAction == clearAction) {
-                clearUserRect();
-            }
-        }
+        // 移除矩形相关选项，只保留多边形
+        // 源视图主要用于显示结果，不需要编辑功能
     });
     
-    // 设置模板视图的右键菜单
-    ui->templateView->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(ui->templateView, &QGraphicsView::customContextMenuRequested, this, [this](const QPoint& pos) {
-        QMenu contextMenu(this);
-        
-        if (m_hasUserRect) {
-            QAction* clearRectAction = contextMenu.addAction("清除用户矩形");
-            contextMenu.addSeparator();
-        }
-        
-        if (m_hasUserPolygon) {
-            QAction* clearPolygonAction = contextMenu.addAction("清除用户多边形");
-            contextMenu.addSeparator();
-        }
-        
-        QAction* startPolygonAction = contextMenu.addAction("开始多边形选择");
-        
-        QAction* selectedAction = contextMenu.exec(ui->templateView->mapToGlobal(pos));
-        
-        if (selectedAction) {
-            if (selectedAction->text() == "清除用户矩形") {
-                clearUserRect();
-            } else if (selectedAction->text() == "清除用户多边形") {
-                clearPolygon();
-            } else if (selectedAction->text() == "开始多边形选择") {
-                startPolygonSelection();
-            }
-        }
-    });
-    
-    // 设置模板视图的鼠标事件（已在上方设置）
+    // 模板视图的右键菜单已在 setupTemplateViewMouseEvents 中设置
     
     // 设置状态栏样式
     ui->statusBar->setStyleSheet("QStatusBar::item { border: none; }");
@@ -176,13 +153,23 @@ void MatchToolDialog::setupTemplateViewMouseEvents()
     // 设置右键菜单
     ui->templateView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->templateView, &QGraphicsView::customContextMenuRequested, this, [this](const QPoint& pos) {
-        if (m_hasUserRect) {
-            QMenu contextMenu(this);
-            QAction* clearAction = contextMenu.addAction("清除用户矩形");
+        QMenu contextMenu(this);
+        
+        if (m_hasUserPolygon) {
+            // 有用户多边形时，显示清除选项
+            QAction* clearPolygonAction = contextMenu.addAction("清除用户多边形");
             QAction* selectedAction = contextMenu.exec(ui->templateView->mapToGlobal(pos));
             
-            if (selectedAction == clearAction) {
-                clearUserRect();
+            if (selectedAction == clearPolygonAction) {
+                clearUserPolygon();
+            }
+        } else {
+            // 没有用户多边形时，显示开始多边形选择选项
+            QAction* startPolygonAction = contextMenu.addAction("开始多边形选择");
+            QAction* selectedAction = contextMenu.exec(ui->templateView->mapToGlobal(pos));
+            
+            if (selectedAction == startPolygonAction) {
+                startPolygonSelection();
             }
         }
     });
@@ -192,6 +179,7 @@ void MatchToolDialog::setupConnections()
 {
     // 连接信号槽
     connect(ui->loadSrcButton, &QPushButton::clicked, this, &MatchToolDialog::onLoadSrcButtonClicked);
+    connect(ui->loadCamButton, &QPushButton::clicked, this, &MatchToolDialog::onLoadCamButtonClicked);
     connect(ui->loadDstButton, &QPushButton::clicked, this, &MatchToolDialog::onLoadDstButtonClicked);
     connect(ui->executeButton, &QPushButton::clicked, this, &MatchToolDialog::onExecuteButtonClicked);
     connect(ui->clearButton, &QPushButton::clicked, this, &MatchToolDialog::onClearButtonClicked);
@@ -200,6 +188,9 @@ void MatchToolDialog::setupConnections()
     connect(ui->maxPositionsSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
     connect(ui->maxOverlapSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
     connect(ui->scoreSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
+    
+    // 连接源图像标签页变化信号
+    // connect(ui->sourceTabWidget, &QTabWidget::currentChanged, this, &MatchToolDialog::onSourceTabChanged);
 }
 
 void MatchToolDialog::onLoadSrcButtonClicked()
@@ -214,6 +205,19 @@ void MatchToolDialog::onLoadSrcButtonClicked()
         loadSourceImage(filePath);
         saveImagePaths(); // 保存路径
     }
+}
+
+void MatchToolDialog::onLoadCamButtonClicked()
+{
+    // 打开摄像头预览
+    CameraPreviewDialog* cameraDialog = new CameraPreviewDialog(this);
+    cameraDialog->setAttribute(Qt::WA_DeleteOnClose);
+    
+    // 连接图像捕获信号
+    connect(cameraDialog, &CameraPreviewDialog::imageCaptured, 
+            this, &MatchToolDialog::onCameraImageCaptured);
+    
+    cameraDialog->show();
 }
 
 void MatchToolDialog::onLoadDstButtonClicked()
@@ -237,6 +241,16 @@ void MatchToolDialog::onExecuteButtonClicked()
         return;
     }
     
+    // 添加图像尺寸验证
+    if (m_sourceImage.rows < m_templateImage.rows || m_sourceImage.cols < m_templateImage.cols) {
+        QString errorMsg = QString("源图像尺寸 (%1x%2) 小于模板图像尺寸 (%3x%4)，无法进行模板匹配！\n\n"
+                                 "请确保源图像的分辨率大于或等于模板图像。")
+                                 .arg(m_sourceImage.cols).arg(m_sourceImage.rows)
+                                 .arg(m_templateImage.cols).arg(m_templateImage.rows);
+        QMessageBox::critical(this, "图像尺寸错误", errorMsg);
+        return;
+    }
+    
     // 设置匹配器参数
     double score = ui->scoreSpinBox->value();
     m_matcher.setMaxPositions(ui->maxPositionsSpinBox->value());
@@ -250,6 +264,10 @@ void MatchToolDialog::onExecuteButtonClicked()
     std::cout << "Score阈值: " << score << std::endl;
     std::cout << "MaxPositions: " << ui->maxPositionsSpinBox->value() << std::endl;
     std::cout << "MaxOverlap: " << ui->maxOverlapSpinBox->value() << std::endl;
+    
+    // 显示图像尺寸信息
+    std::cout << "源图像尺寸: " << m_sourceImage.cols << "x" << m_sourceImage.rows << std::endl;
+    std::cout << "模板图像尺寸: " << m_templateImage.cols << "x" << m_templateImage.rows << std::endl;
     
     // 记录开始时间
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -660,51 +678,11 @@ void MatchToolDialog::refreshSourceViewWithResults()
         cv::putText(displayImage, angleText, textPos3, 
                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 0, 255), 2);
         
-        // 绘制用户定义的矩形（如果存在）
-        if (m_hasUserRect) {
-            if (m_hasUserPolygon && !m_polygonPoints.empty()) {
-                // 绘制用户定义的多边形
-                drawUserPolygonOnResults(result, displayImage);
-            } else {
-                // 绘制用户定义的矩形
-                cv::Rect transformedRect = transformRectToResult(m_userDefinedRect, result);
-                
-                // 使用优化的虚线绘制用户矩形
-                cv::Point2d rectLT(transformedRect.x, transformedRect.y);
-                cv::Point2d rectRT(transformedRect.x + transformedRect.width, transformedRect.y);
-                cv::Point2d rectRB(transformedRect.x + transformedRect.width, transformedRect.y + transformedRect.height);
-                cv::Point2d rectLB(transformedRect.x, transformedRect.y + transformedRect.height);
-                
-                // 使用优化的虚线绘制
-                cv::Scalar userRectColor(0, 100, 255);  // 蓝色
-                drawDashLine(displayImage, rectLT, rectRT, userRectColor, userRectColor);
-                drawDashLine(displayImage, rectRT, rectRB, userRectColor, userRectColor);
-                drawDashLine(displayImage, rectRB, rectLB, userRectColor, userRectColor);
-                drawDashLine(displayImage, rectLB, rectLT, userRectColor, userRectColor);
-                
-                // 在矩形中心绘制小圆点
-                cv::Point2d rectCenter(transformedRect.x + transformedRect.width/2, transformedRect.y + transformedRect.height/2);
-                cv::circle(displayImage, rectCenter, 5, userRectColor, -1, cv::LINE_AA);
-                cv::circle(displayImage, rectCenter, 5, cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
-                
-                // 在矩形四个角绘制小方块，增强可见性
-                int cornerSize = 4;
-                cv::Scalar cornerColor(255, 255, 255);  // 白色角落标记
-                cv::rectangle(displayImage, 
-                             cv::Rect(rectLT.x - cornerSize/2, rectLT.y - cornerSize/2, cornerSize, cornerSize),
-                             cornerColor, -1);
-                cv::rectangle(displayImage, 
-                             cv::Rect(rectRT.x - cornerSize/2, rectRT.y - cornerSize/2, cornerSize, cornerSize),
-                             cornerColor, -1);
-                cv::rectangle(displayImage, 
-                             cv::Rect(rectRB.x - cornerSize/2, rectRB.y - cornerSize/2, cornerSize, cornerSize),
-                             cornerColor, -1);
-                cv::rectangle(displayImage, 
-                             cv::Rect(rectLB.x - cornerSize/2, rectLB.y - cornerSize/2, cornerSize, cornerSize),
-                             cornerColor, -1);
-            }
+        // 绘制用户定义的多边形（如果存在）
+        if (m_hasUserPolygon && !m_polygonPoints.empty()) {
+            // 绘制用户定义的多边形
+            drawUserPolygonOnResults(result, displayImage);
         }
-        
     }
     // cv::imwrite("result_src.png", displayImage);    
     std::cout << "保存的图片尺寸: " << displayImage.size() << ", 类型: " << displayImage.type() << std::endl;
@@ -870,13 +848,13 @@ bool MatchToolDialog::eventFilter(QObject *obj, QEvent *event)
             }
         } else if (event->type() == QEvent::MouseMove) {
             QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-            if (m_isDrawingRect || m_isSelectingPolygon) {
+            if (m_isSelectingPolygon) {
                 onTemplateViewMouseMove(mouseEvent);
                 return true;
             }
         } else if (event->type() == QEvent::MouseButtonRelease) {
             QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-            if (mouseEvent->button() == Qt::LeftButton && (m_isDrawingRect || m_isSelectingPolygon)) {
+            if (mouseEvent->button() == Qt::LeftButton && m_isSelectingPolygon) {
                 onTemplateViewMouseRelease(mouseEvent);
                 return true;
             }
@@ -924,71 +902,14 @@ void MatchToolDialog::onTemplateViewMousePress(QMouseEvent* event)
         if (m_isSelectingPolygon) {
             // 多边形选择模式：添加点
             addPolygonPoint(event->pos());
-        } else {
-            // 矩形绘制模式（保持向后兼容）
-            m_isDrawingRect = true;
-            m_rectStartPoint = ui->templateView->mapToScene(event->pos()).toPoint();
-            m_rectEndPoint = m_rectStartPoint;
-            
-            // 清除之前的矩形
-            m_hasUserRect = false;
-            refreshTemplateView();
         }
+        // 移除矩形绘制模式
     }
 }
 
 void MatchToolDialog::onTemplateViewMouseMove(QMouseEvent* event)
 {
-    if (m_isDrawingRect && m_templateImageLoaded) {
-        m_rectEndPoint = ui->templateView->mapToScene(event->pos()).toPoint();
-        
-        // 实时显示绘制的矩形
-        refreshTemplateView();
-        drawUserRectOnTemplate();
-        
-        // 添加实时尺寸显示
-        if (m_templateScene) {
-            // 清除之前的实时尺寸标签
-            QList<QGraphicsItem*> items = m_templateScene->items();
-            for (auto item : items) {
-                if (item->data(0).toString() == "LiveSizeLabel") {
-                    m_templateScene->removeItem(item);
-                    delete item;
-                }
-            }
-            
-            // 计算实时矩形尺寸
-            int width = abs(m_rectEndPoint.x() - m_rectStartPoint.x());
-            int height = abs(m_rectEndPoint.y() - m_rectStartPoint.y());
-            
-            // 创建实时尺寸标签
-            QGraphicsTextItem* sizeLabel = new QGraphicsTextItem();
-            sizeLabel->setPlainText(QString("%1 x %2").arg(width).arg(height));
-            sizeLabel->setData(0, "LiveSizeLabel");
-            
-            // 设置标签样式
-            QFont font = sizeLabel->font();
-            font.setPointSize(10);
-            font.setBold(true);
-            sizeLabel->setFont(font);
-            sizeLabel->setDefaultTextColor(QColor(255, 255, 255));
-            
-            // 设置标签位置（在矩形下方）
-            sizeLabel->setPos((m_rectStartPoint.x() + m_rectEndPoint.x()) / 2 - sizeLabel->boundingRect().width() / 2, 
-                              (m_rectStartPoint.y() + m_rectEndPoint.y()) / 2 + sizeLabel->boundingRect().height() + 10);
-            
-            // 添加黑色背景以提高可读性
-            QGraphicsRectItem* bgRect = new QGraphicsRectItem(sizeLabel->boundingRect());
-            bgRect->setBrush(QColor(0, 0, 0, 180));
-            bgRect->setPen(Qt::NoPen);
-            bgRect->setPos(sizeLabel->pos());
-            bgRect->setData(0, "LiveSizeLabel");
-            
-            // 添加到场景
-            m_templateScene->addItem(bgRect);
-            m_templateScene->addItem(sizeLabel);
-        }
-    } else if (m_isSelectingPolygon && m_templateImageLoaded) {
+    if (m_isSelectingPolygon && m_templateImageLoaded) {
         // 多边形选择模式：实时显示当前鼠标位置和已选择的点
         refreshTemplateView();
         drawPolygonOnTemplate();
@@ -1006,47 +927,13 @@ void MatchToolDialog::onTemplateViewMouseMove(QMouseEvent* event)
             m_templateScene->addItem(previewLine);
         }
     }
+    // 移除矩形绘制逻辑
 }
 
 void MatchToolDialog::onTemplateViewMouseRelease(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton && m_isDrawingRect) {
-        m_isDrawingRect = false;
-        
-        // 计算最终矩形
-        int x = qMin(m_rectStartPoint.x(), m_rectEndPoint.x());
-        int y = qMin(m_rectStartPoint.y(), m_rectEndPoint.y());
-        int width = abs(m_rectEndPoint.x() - m_rectStartPoint.x());
-        int height = abs(m_rectEndPoint.y() - m_rectStartPoint.y());
-        
-        if (width > 5 && height > 5) {
-            m_userDefinedRect = cv::Rect(x, y, width, height);
-            m_hasUserRect = true;
-            
-            // 清除实时尺寸标签
-            if (m_templateScene) {
-                QList<QGraphicsItem*> items = m_templateScene->items();
-                for (auto item : items) {
-                    if (item->data(0).toString() == "LiveSizeLabel") {
-                        m_templateScene->removeItem(item);
-                        delete item;
-                    }
-                }
-            }
-            
-            // 绘制最终矩形
-            refreshTemplateView();
-            drawUserRectOnTemplate();
-            
-            // 更新状态栏
-            ui->statusBar->showMessage(QString("用户矩形已设置: %1 x %2").arg(width).arg(height), 3000);
-        } else {
-            // 矩形太小，清除
-            m_hasUserRect = false;
-            refreshTemplateView();
-            ui->statusBar->showMessage("矩形太小，已清除", 2000);
-        }
-    }
+    // 移除矩形处理逻辑，只保留多边形选择
+    // 多边形选择通过左键点击添加点，右键结束选择
 }
 
 void MatchToolDialog::onTemplateViewRightClick(QMouseEvent* event)
@@ -1064,11 +951,6 @@ void MatchToolDialog::onTemplateViewRightClick(QMouseEvent* event)
 
 void MatchToolDialog::startPolygonSelection()
 {
-    // 清除之前的矩形选择
-    if (m_hasUserRect) {
-        clearUserRect();
-    }
-    
     // 开始多边形选择模式
     m_isSelectingPolygon = true;
     m_polygonPoints.clear();
@@ -1093,7 +975,7 @@ void MatchToolDialog::finishPolygonSelection()
 
     // 直接保存多边形，不创建矩形边界框
     m_hasUserPolygon = true;
-    m_hasUserRect = true;  // 保持兼容性
+    // 移除矩形兼容性设置，只保留多边形
     
     // 清除实时预览线
     if (m_templateScene) {
@@ -1451,30 +1333,36 @@ void MatchToolDialog::clearUserRect()
     // 从匹配器中清除用户矩形
     m_matcher.setUserDefinedRect(cv::Rect());
     
-    // 清除模板视图上的所有相关图形项
-    if (m_templateScene) {
-        QList<QGraphicsItem*> items = m_templateScene->items();
-        for (auto item : items) {
-            QString itemType = item->data(0).toString();
-            if (itemType == "UserRect" || itemType == "CornerMarker" || 
-                itemType == "SizeLabel" || itemType == "LiveSizeLabel" ||
-                itemType == "PolygonPoint" || itemType == "PreviewLine") {
-                m_templateScene->removeItem(item);
-                delete item;
-            }
-        }
-    }
-    
-    // 刷新模板视图
+    // 刷新显示
     refreshTemplateView();
-    
-    // 如果有匹配结果，重新绘制源图像
-    if (!m_matchResults.empty()) {
+    if (m_resultsAvailable) {
         refreshSourceViewWithResults();
     }
     
-    // 显示状态信息
-    ui->statusBar->showMessage("用户选择区域已清除", 2000);
+    // 更新状态栏
+    ui->statusBar->showMessage("用户矩形已清除", 2000);
+}
+
+void MatchToolDialog::clearUserPolygon()
+{
+    if (!m_hasUserPolygon) return;
+    
+    // 清除用户多边形标志
+    m_hasUserPolygon = false;
+    m_polygonPoints.clear();
+    m_isSelectingPolygon = false;
+    
+    // 从匹配器中清除用户多边形
+    m_matcher.setUserDefinedRect(cv::Rect()); // 使用现有的清除函数
+    
+    // 刷新显示
+    refreshTemplateView();
+    if (m_resultsAvailable) {
+        refreshSourceViewWithResults();
+    }
+    
+    // 更新状态栏
+    ui->statusBar->showMessage("用户多边形已清除", 2000);
 }
 
 void MatchToolDialog::applyZoomAtMousePosition(const QPoint& mousePos)
@@ -1541,34 +1429,6 @@ void MatchToolDialog::applyTemplateZoomAtMousePosition(const QPoint& mousePos)
     
     // 更新状态栏显示当前缩放比例（临时显示）
     ui->statusBar->showMessage(QString("模板缩放比例: %1%").arg(m_templateScale * 100, 0, 'f', 1), 2000);
-}
-
-void MatchToolDialog::clearPolygon()
-{
-    if (!m_hasUserPolygon) return;
-    
-    // 清除多边形标志
-    m_hasUserPolygon = false;
-    m_polygonPoints.clear();
-    m_isSelectingPolygon = false;
-    
-    // 清除模板视图上的所有相关图形项
-    if (m_templateScene) {
-        QList<QGraphicsItem*> items = m_templateScene->items();
-        for (auto item : items) {
-            QString itemType = item->data(0).toString();
-            if (itemType == "PolygonPoint" || itemType == "PreviewLine") {
-                m_templateScene->removeItem(item);
-                delete item;
-            }
-        }
-    }
-    
-    // 刷新模板视图
-    refreshTemplateView();
-    
-    // 显示状态信息
-    ui->statusBar->showMessage("用户多边形已清除", 2000);
 }
 
 void MatchToolDialog::drawUserPolygonOnResults(const s_SingleTargetMatch& result, cv::Mat& displayImage)
@@ -1659,4 +1519,95 @@ std::vector<cv::Point2f> MatchToolDialog::transformPolygonToResult(const std::ve
     return transformedPolygon;
 }
 
- 
+// 摄像头相关函数实现（已注释掉）
+
+// 辅助函数：将QImage转换为cv::Mat
+cv::Mat MatchToolDialog::qImageToMat(const QImage& qimage)
+{
+    if (qimage.isNull()) {
+        return cv::Mat();
+    }
+    
+    // 转换为RGB格式
+    QImage rgbImage = qimage.convertToFormat(QImage::Format_RGB888);
+    
+    // 创建cv::Mat
+    cv::Mat mat(rgbImage.height(), rgbImage.width(), CV_8UC3);
+    
+    // 复制数据
+    memcpy(mat.data, rgbImage.bits(), rgbImage.sizeInBytes());
+    
+    // 转换为灰度图像
+    cv::Mat grayMat;
+    cv::cvtColor(mat, grayMat, cv::COLOR_RGB2GRAY);
+    
+    return grayMat;
+}
+
+void MatchToolDialog::onCameraImageCaptured(const QImage& image)
+{
+    // 将 QImage 转换为 cv::Mat
+    cv::Mat capturedMat;
+    
+    // 转换为灰度图像（模板匹配需要灰度图像）
+    if (image.format() == QImage::Format_Grayscale8) {
+        // 已经是灰度图像
+        capturedMat = cv::Mat(image.height(), image.width(), CV_8UC1, 
+                             const_cast<uchar*>(image.bits()), image.bytesPerLine());
+    } else {
+        // 转换为灰度图像
+        QImage grayImage = image.convertToFormat(QImage::Format_Grayscale8);
+        capturedMat = cv::Mat(grayImage.height(), grayImage.width(), CV_8UC1, 
+                             const_cast<uchar*>(grayImage.bits()), grayImage.bytesPerLine());
+    }
+    
+    // 深拷贝图像数据（避免指针失效）
+    m_sourceImage = capturedMat.clone();
+    
+    // 添加图像尺寸验证
+    if (m_templateImageLoaded) {
+        if (m_sourceImage.rows < m_templateImage.rows || m_sourceImage.cols < m_templateImage.cols) {
+            QString errorMsg = QString("摄像头图像尺寸 (%1x%2) 小于模板图像尺寸 (%3x%4)！\n\n"
+                                     "模板匹配需要源图像大于或等于模板图像。\n"
+                                     "请使用更高分辨率的摄像头或选择更小的模板图像。")
+                                     .arg(m_sourceImage.cols).arg(m_sourceImage.rows)
+                                     .arg(m_templateImage.cols).arg(m_templateImage.rows);
+            QMessageBox::warning(this, "图像尺寸警告", errorMsg);
+            
+            // 显示尺寸信息
+            qDebug() << "Warning: Camera image size" << m_sourceImage.cols << "x" << m_sourceImage.rows 
+                     << "is smaller than template size" << m_templateImage.cols << "x" << m_templateImage.rows;
+        } else {
+            qDebug() << "Camera image size" << m_sourceImage.cols << "x" << m_sourceImage.rows 
+                     << "is suitable for template size" << m_templateImage.cols << "x" << m_templateImage.rows;
+        }
+    }
+    
+    // 模拟MFC的LoadSrc()处理过程
+    // 1. 计算缩放比例
+    QRect viewRect = ui->sourceView->rect();
+    double dScaleX = viewRect.width() / (double)m_sourceImage.cols;
+    double dScaleY = viewRect.height() / (double)m_sourceImage.rows;
+    m_dSrcScale = qMin(dScaleX, dScaleY);
+    m_dNewScale = m_dSrcScale;
+    
+    // 2. 设置显示标志
+    m_bShowResult = false;
+    m_iScaleTimes = 0;
+    
+    m_sourceImageLoaded = true;
+    refreshSourceView();
+    
+    // 3. 更新状态栏
+    updateSourceImageLabel();
+    
+    // 4. 保存路径（标记为摄像头图像）
+    m_lastSourceImagePath = "摄像头图像";
+    saveImagePaths();
+    
+    // 显示成功消息
+    updateStatusBar(QString("摄像头图像已加载为源图像 (%1x%2)").arg(m_sourceImage.cols).arg(m_sourceImage.rows));
+    
+    qDebug() << "Camera image captured and loaded as source image, size:" 
+             << m_sourceImage.cols << "x" << m_sourceImage.rows;
+}
