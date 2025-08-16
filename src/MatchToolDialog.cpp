@@ -9,6 +9,7 @@
 #include <chrono>
 #include <QSettings>
 #include <QDebug>
+#include <QDateTime>
 
 MatchToolDialog::MatchToolDialog(QWidget *parent)
     : QDialog(parent)
@@ -35,6 +36,7 @@ MatchToolDialog::MatchToolDialog(QWidget *parent)
     , m_hasUserRect(false)
     , m_isSelectingPolygon(false)
     , m_hasUserPolygon(false)
+    , m_orbResultsAvailable(false)
     // , m_cameraDriver(nullptr)
     // , m_cameraConnected(false)
     // , m_cameraStreaming(false)
@@ -43,6 +45,7 @@ MatchToolDialog::MatchToolDialog(QWidget *parent)
     ui->setupUi(this);
     setupUI();
     setupConnections();
+    setupORBConnections();
     // setupCameraConnections();
     // initializeCamera();
 }
@@ -188,6 +191,13 @@ void MatchToolDialog::setupConnections()
     connect(ui->maxPositionsSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
     connect(ui->maxOverlapSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
     connect(ui->scoreSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
+    
+    // 连接ORB特征匹配按钮
+    connect(ui->orbMatchButton, &QPushButton::clicked, this, &MatchToolDialog::onORBMatchButtonClicked);
+    
+    // 连接ORB参数变化信号
+    connect(ui->orbMaxFeaturesSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
+    connect(ui->orbMatchThresholdSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MatchToolDialog::onParameterChanged);
     
     // 连接源图像标签页变化信号
     // connect(ui->sourceTabWidget, &QTabWidget::currentChanged, this, &MatchToolDialog::onSourceTabChanged);
@@ -1610,4 +1620,385 @@ void MatchToolDialog::onCameraImageCaptured(const QImage& image)
     
     qDebug() << "Camera image captured and loaded as source image, size:" 
              << m_sourceImage.cols << "x" << m_sourceImage.rows;
+}
+
+// ORB特征匹配相关槽函数实现
+void MatchToolDialog::onORBMatchButtonClicked()
+{
+    if (!m_sourceImageLoaded || !m_templateImageLoaded) {
+        QMessageBox::warning(this, "警告", "请先加载源图像和模板图像");
+        return;
+    }
+    
+    // 设置ORB匹配器参数
+    m_orbMatcher.setORBParameters(ui->orbMaxFeaturesSpinBox->value());
+    m_orbMatcher.setMatchingParameters(ui->orbMatchThresholdSpinBox->value());
+    
+    // 执行ORB匹配
+    performORBMatching();
+}
+
+void MatchToolDialog::performORBMatching()
+{
+    try {
+        // 显示进度信息
+        updateStatusBar("正在执行ORB特征匹配...");
+        
+        // 执行ORB匹配
+        m_orbMatchResult = m_orbMatcher.performORBMatching(
+            m_sourceImage,
+            m_templateImage, 
+            ui->orbMatchThresholdSpinBox->value(),
+            ui->orbMaxFeaturesSpinBox->value()
+        );
+        
+        if (m_orbMatchResult.isMatched) {
+            m_orbResultsAvailable = true;
+            displayORBResults(m_orbMatchResult);
+            updateStatusBar(QString("ORB匹配成功！匹配分数: %1, 位置: (%2, %3)")
+                          .arg(m_orbMatchResult.matchScore, 0, 'f', 3)
+                          .arg(m_orbMatchResult.matchLocation.x, 0, 'f', 1)
+                          .arg(m_orbMatchResult.matchLocation.y, 0, 'f', 1));
+        } else {
+            m_orbResultsAvailable = false;
+            updateStatusBar("ORB匹配失败！");
+        }
+        
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "错误", QString("ORB匹配过程中发生错误: %1").arg(e.what()));
+        updateStatusBar("ORB匹配失败！");
+    }
+}
+
+void MatchToolDialog::displayORBResults(const ORBMatchResult& result)
+{
+    if (!result.isMatched) {
+        return;
+    }
+    
+    // 获取匹配结果图像
+    cv::Mat resultImage = m_orbMatcher.getMatchResultImage(m_sourceImage, m_templateImage, result);
+    
+    // 在源图像中绘制模板矩形区域
+    cv::Mat sourceWithTemplate = m_sourceImage.clone();
+    if (sourceWithTemplate.channels() == 1) {
+        cv::cvtColor(sourceWithTemplate, sourceWithTemplate, cv::COLOR_GRAY2BGR);
+    }
+    
+    // 获取模板在源图像中的四个角点位置
+    std::vector<cv::Point2f> templateCorners = m_orbMatcher.getTemplateCornersInSource(m_templateImage, result);
+    
+    // 获取模板图像的尺寸
+    int templateWidth = m_templateImage.cols;
+    int templateHeight = m_templateImage.rows;
+    
+    if (templateCorners.size() == 4) {
+        // 绘制模板的四个角点
+        for (int i = 0; i < 4; i++) {
+            cv::circle(sourceWithTemplate, templateCorners[i], 5, cv::Scalar(0, 255, 255), -1);
+        }
+        
+        // 绘制模板轮廓（考虑旋转和缩放）
+        for (int i = 0; i < 4; i++) {
+            cv::line(sourceWithTemplate, templateCorners[i], templateCorners[(i+1)%4], 
+                    cv::Scalar(0, 255, 0), 3);
+        }
+        
+        // 在矩形中心绘制十字标记
+        cv::Point2f matchCenter = result.matchLocation;
+        cv::line(sourceWithTemplate, 
+                 cv::Point(matchCenter.x - 20, matchCenter.y),
+                 cv::Point(matchCenter.x + 20, matchCenter.y),
+                 cv::Scalar(255, 0, 0), 2);
+        cv::line(sourceWithTemplate, 
+                 cv::Point(matchCenter.x, matchCenter.y - 20),
+                 cv::Point(matchCenter.x, matchCenter.y + 20),
+                 cv::Scalar(255, 0, 0), 2);
+    } else {
+        // 如果无法计算角点，使用简单的矩形
+        cv::Point2f matchCenter = result.matchLocation;
+        cv::Point2f topLeft(matchCenter.x - templateWidth/2, matchCenter.y - templateHeight/2);
+        cv::Point2f bottomRight(matchCenter.x + templateWidth/2, matchCenter.y + templateHeight/2);
+        
+        cv::rectangle(sourceWithTemplate, topLeft, bottomRight, cv::Scalar(0, 255, 0), 3);
+        
+        // 在矩形中心绘制十字标记
+        cv::line(sourceWithTemplate, 
+                 cv::Point(matchCenter.x - 20, matchCenter.y),
+                 cv::Point(matchCenter.x + 20, matchCenter.y),
+                 cv::Scalar(255, 0, 0), 2);
+        cv::line(sourceWithTemplate, 
+                 cv::Point(matchCenter.x, matchCenter.y - 20),
+                 cv::Point(matchCenter.x, matchCenter.y + 20),
+                 cv::Scalar(255, 0, 0), 2);
+    }
+    
+    // 如果用户选择了多边形，将其也显示到源图像中
+    if (m_hasUserPolygon && !m_polygonPoints.empty()) {
+        // 计算多边形在源图像中的位置
+        std::vector<cv::Point2f> transformedPolygon = transformPolygonToORBResult(m_polygonPoints, result);
+        
+        if (!transformedPolygon.empty()) {
+            // 绘制变换后的多边形
+            std::vector<cv::Point> polygonPoints;
+            for (const auto& point : transformedPolygon) {
+                polygonPoints.push_back(cv::Point(point.x, point.y));
+            }
+            
+            // 绘制多边形轮廓
+            cv::polylines(sourceWithTemplate, std::vector<std::vector<cv::Point>>{polygonPoints}, 
+                         true, cv::Scalar(255, 0, 255), 3);
+            
+            // 绘制多边形的顶点
+            for (const auto& point : transformedPolygon) {
+                cv::circle(sourceWithTemplate, cv::Point(point.x, point.y), 6, cv::Scalar(255, 0, 255), -1);
+            }
+            
+            // 在多边形上方添加标签
+            if (!transformedPolygon.empty()) {
+                cv::Point2f polygonTopLeft = transformedPolygon[0];
+                for (const auto& point : transformedPolygon) {
+                    if (point.y < polygonTopLeft.y) {
+                        polygonTopLeft = point;
+                    }
+                }
+                
+                cv::putText(sourceWithTemplate, "User Polygon", 
+                           cv::Point(polygonTopLeft.x, polygonTopLeft.y - 15),
+                           cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 0, 255), 2);
+            }
+        }
+    }
+    
+    // 添加匹配信息文本
+    QString matchInfo = QString("Score: %1 | Angle: %2° | Scale: %3")
+                       .arg(result.matchScore, 0, 'f', 3)
+                       .arg(result.rotationAngle, 0, 'f', 1)
+                       .arg(result.scale, 0, 'f', 3);
+    
+    // 如果有多边形，添加多边形信息
+    if (m_hasUserPolygon && !m_polygonPoints.empty()) {
+        matchInfo += QString(" | Polygon: %1 points").arg(m_polygonPoints.size());
+    }
+    
+    // 计算文本显示位置
+    cv::Point2f textPos;
+    if (templateCorners.size() == 4) {
+        // 使用模板角点的左上角上方
+        textPos = cv::Point2f(templateCorners[0].x, templateCorners[0].y - 10);
+    } else {
+        // 使用简单矩形的左上角上方
+        cv::Point2f matchCenter = result.matchLocation;
+        cv::Point2f topLeft(matchCenter.x - templateWidth/2, matchCenter.y - templateHeight/2);
+        textPos = cv::Point2f(topLeft.x, topLeft.y - 10);
+    }
+    
+    cv::putText(sourceWithTemplate, matchInfo.toStdString(),
+               textPos, cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+    
+    // 在源图像视图中显示结果
+    refreshSourceViewWithResults();
+    
+    // 更新源图像视图，显示带有模板矩形的图像
+    QImage qimg = matToQImage(sourceWithTemplate);
+    QPixmap pixmap = QPixmap::fromImage(qimg);
+    
+    if (m_sourceScene) {
+        m_sourceScene->clear();
+        m_sourceScene->addPixmap(pixmap);
+        ui->sourceView->setScene(m_sourceScene);
+        ui->sourceView->fitInView(m_sourceScene->sceneRect(), Qt::KeepAspectRatio);
+    }
+    
+    // 在模板图像上绘制匹配位置
+    cv::Mat templateWithResult = m_templateImage.clone();
+    if (templateWithResult.channels() == 1) {
+        cv::cvtColor(templateWithResult, templateWithResult, cv::COLOR_GRAY2BGR);
+    }
+    
+    // 绘制匹配位置标记
+    cv::Point2f templateCenter(templateWidth/2, templateHeight/2);
+    cv::circle(templateWithResult, templateCenter, 15, cv::Scalar(0, 255, 0), 3);
+    cv::putText(templateWithResult, "Center", 
+               cv::Point(templateCenter.x + 20, templateCenter.y - 20),
+               cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+    
+    // 显示匹配信息
+    QString infoText = QString("ORB匹配结果:\n"
+                              "匹配分数: %1\n"
+                              "位置: (%2, %3)\n"
+                              "旋转角度: %4°\n"
+                              "缩放比例: %5")
+                              .arg(result.matchScore, 0, 'f', 3)
+                              .arg(result.matchLocation.x, 0, 'f', 1)
+                              .arg(result.matchLocation.y, 0, 'f', 1)
+                              .arg(result.rotationAngle, 0, 'f', 1)
+                              .arg(result.scale, 0, 'f', 3);
+    
+    // 弹窗显示ORB特征匹配结果图像
+    // 获取ORB匹配器的特征匹配图像（包含特征点、匹配线等）
+    cv::Mat matchResultImage = m_orbMatcher.getMatchResultImage(m_sourceImage, m_templateImage, result);
+    
+    // 转换为Qt图像格式
+    QImage resultQImage = matToQImage(matchResultImage);
+    QPixmap resultPixmap = QPixmap::fromImage(resultQImage);
+    
+    // 创建弹窗显示匹配结果
+    QDialog* resultDialog = new QDialog(this);
+    resultDialog->setWindowTitle("ORB特征匹配结果");
+    resultDialog->setModal(true);
+    resultDialog->resize(1000, 700);
+    
+    QVBoxLayout* layout = new QVBoxLayout(resultDialog);
+    
+    // 创建图像标签
+    QLabel* imageLabel = new QLabel();
+    imageLabel->setPixmap(resultPixmap);
+    imageLabel->setScaledContents(true);
+    imageLabel->setMinimumSize(800, 500);
+    
+    // 创建滚动区域
+    QScrollArea* scrollArea = new QScrollArea();
+    scrollArea->setWidget(imageLabel);
+    scrollArea->setWidgetResizable(true);
+    layout->addWidget(scrollArea);
+    
+    // 添加匹配信息文本
+    QLabel* infoLabel = new QLabel(infoText);
+    infoLabel->setStyleSheet("QLabel { background-color: #f0f0f0; padding: 10px; border: 1px solid #ccc; }");
+    layout->addWidget(infoLabel);
+    
+    // 添加关闭按钮
+    QPushButton* closeButton = new QPushButton("关闭");
+    closeButton->setMinimumHeight(40);
+    layout->addWidget(closeButton);
+    
+    // 连接关闭按钮信号
+    connect(closeButton, &QPushButton::clicked, resultDialog, &QDialog::accept);
+    
+    // 显示弹窗
+    resultDialog->show();
+    
+    // 显示匹配信息（保留原有的消息框）
+    QMessageBox::information(this, "ORB匹配结果", infoText);
+    
+    // 保存结果图像（包含模板矩形）
+    QString resultPath = QString("/userdata/orb_match_result_%1.jpg")
+                        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
+    cv::imwrite(resultPath.toStdString(), sourceWithTemplate);
+    
+    // 保存匹配结果到文件
+    QString resultFile = QString("/userdata/orb_match_result_%1.yaml")
+                        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
+    m_orbMatcher.saveMatchResult(resultFile, result);
+    
+    updateStatusBar(QString("ORB匹配结果已保存到: %1").arg(resultPath));
+}
+
+void MatchToolDialog::setupORBConnections()
+{
+    // 连接ORB匹配器的信号
+    connect(&m_orbMatcher, &ORBFeatureMatcher::matchingCompleted,
+            this, &MatchToolDialog::displayORBResults);
+    connect(&m_orbMatcher, &ORBFeatureMatcher::matchingError,
+            [this](const QString& error) {
+                QMessageBox::warning(this, "ORB匹配错误", error);
+                updateStatusBar("ORB匹配错误！");
+            });
+    connect(&m_orbMatcher, &ORBFeatureMatcher::matchingProgress,
+            [this](int progress) {
+                updateStatusBar(QString("ORB匹配进度: %1%").arg(progress));
+            });
+}
+
+// ORB匹配结果的多边形变换函数
+std::vector<cv::Point2f> MatchToolDialog::transformPolygonToORBResult(const std::vector<cv::Point2f>& templatePolygon, const ORBMatchResult& result)
+{
+    if (templatePolygon.empty() || !result.isMatched) {
+        return std::vector<cv::Point2f>();
+    }
+    
+    // 方法1：使用单应性矩阵进行精确变换
+    // 标准公式：[x1, y1, 1]ᵀ = H × [x2, y2, 1]ᵀ
+    if (!result.homographyMatrix.empty()) {
+        std::vector<cv::Point2f> transformedPolygon;
+        transformedPolygon.reserve(templatePolygon.size());
+        
+        // 使用OpenCV的perspectiveTransform函数，它内部就是使用这个公式
+        cv::perspectiveTransform(templatePolygon, transformedPolygon, result.homographyMatrix.inv());
+        
+        // 验证变换结果是否合理
+        bool validTransform = true;
+        for (const auto& point : transformedPolygon) {
+            if (point.x < -1000 || point.y < -1000 || 
+                point.x > 10000 || point.y > 10000) { // 合理的图像尺寸上限
+                validTransform = false;
+                break;
+            }
+        }
+        
+        if (validTransform) {
+            std::cout << "使用单应性矩阵变换成功" << std::endl;
+            return transformedPolygon;
+        } else {
+            std::cout << "警告: 单应性矩阵变换结果异常，回退到几何变换" << std::endl;
+        }
+    }
+    
+    // 方法2：基于几何变换的坐标转换（备用方案）
+    // 使用与模板矩形相同的变换逻辑，确保一致性
+    
+    // 获取模板图像尺寸
+    int templateWidth = m_templateImage.cols;
+    int templateHeight = m_templateImage.rows;
+    
+    // 计算模板图像的中心点
+    cv::Point2f templateImageCenter(templateWidth / 2.0f, templateHeight / 2.0f);
+    
+    // 获取ORB匹配的中心位置
+    cv::Point2f matchCenter = result.matchLocation;
+    
+    // 获取旋转角度和缩放比例
+    double angle = result.rotationAngle * CV_PI / 180.0;
+    double scale = result.scale;
+    
+    // 预计算三角函数值
+    double cosA = cos(angle);
+    double sinA = sin(angle);
+    
+    std::vector<cv::Point2f> transformedPolygon;
+    transformedPolygon.reserve(templatePolygon.size());
+    
+    for (const auto& point : templatePolygon) {
+        // 1. 将点坐标转换为相对于模板图像中心的坐标
+        cv::Point2f relativePoint = point - templateImageCenter;
+        
+        // 2. 应用旋转变换（先旋转）
+        cv::Point2f rotatedPoint;
+        rotatedPoint.x = relativePoint.x * cosA - relativePoint.y * sinA;
+        rotatedPoint.y = relativePoint.x * sinA + relativePoint.y * cosA;
+        
+        // 3. 应用缩放变换（再缩放）
+        rotatedPoint.x *= scale;
+        rotatedPoint.y *= scale;
+        
+        // 4. 移动到匹配位置（最后平移）
+        cv::Point2f finalPoint = rotatedPoint + matchCenter;
+        transformedPolygon.push_back(finalPoint);
+    }
+    
+    // 调试输出
+    std::cout << "几何变换调试信息:" << std::endl;
+    std::cout << "模板图像尺寸: " << templateWidth << "x" << templateHeight << std::endl;
+    std::cout << "模板中心: (" << templateImageCenter.x << ", " << templateImageCenter.y << ")" << std::endl;
+    std::cout << "匹配中心: (" << matchCenter.x << ", " << matchCenter.y << ")" << std::endl;
+    std::cout << "旋转角度: " << result.rotationAngle << "度" << std::endl;
+    std::cout << "缩放比例: " << scale << std::endl;
+    
+    for (size_t i = 0; i < templatePolygon.size(); ++i) {
+        std::cout << "点" << i << ": (" << templatePolygon[i].x << ", " << templatePolygon[i].y 
+                  << ") -> (" << transformedPolygon[i].x << ", " << transformedPolygon[i].y << ")" << std::endl;
+    }
+    
+    return transformedPolygon;
 }

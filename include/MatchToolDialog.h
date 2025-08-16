@@ -34,6 +34,7 @@
 #include "TemplateMatcher.h"
 #include "DataStructures.h"
 #include "CameraPreviewDialog.h"
+#include "ORBFeatureMatcher.h"
 
 // 前向声明
 namespace Ui {
@@ -86,6 +87,7 @@ private slots:
     void onLoadCamButtonClicked();
     void onLoadDstButtonClicked();
     void onExecuteButtonClicked();
+    void onORBMatchButtonClicked();
     
     // 摄像头相关槽函数
     void onCameraImageCaptured(const QImage& image);
@@ -166,6 +168,10 @@ private:
     
     // 多边形变换相关
     std::vector<cv::Point2f> transformPolygonToResult(const std::vector<cv::Point2f>& templatePolygon, const s_SingleTargetMatch& match);
+    
+    // ORB匹配结果的多边形变换函数
+    std::vector<cv::Point2f> transformPolygonToORBResult(const std::vector<cv::Point2f>& templatePolygon, const ORBMatchResult& result);
+    
     void clearUserPolygon();
     
     // 缩放相关函数
@@ -188,6 +194,11 @@ private:
     void loadImagePaths();
     void onParameterChanged();
     
+    // ORB特征匹配相关方法
+    void setupORBConnections();
+    void performORBMatching();
+    void displayORBResults(const ORBMatchResult& result);
+    
     // 摄像头相关函数
     /*
     void initializeCamera();
@@ -202,11 +213,16 @@ private:
     
     // 核心算法
     TemplateMatcher m_matcher;
+    ORBFeatureMatcher m_orbMatcher;
     
     // 图像数据
     cv::Mat m_sourceImage;
     cv::Mat m_templateImage;
     std::vector<s_SingleTargetMatch> m_matchResults;
+    
+    // ORB匹配结果
+    ORBMatchResult m_orbMatchResult;
+    bool m_orbResultsAvailable;
     
     // 图像场景
     QGraphicsScene* m_sourceScene;

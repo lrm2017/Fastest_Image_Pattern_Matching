@@ -212,6 +212,62 @@
               </property>
              </widget>
             </item>
+            <item row="7" column="0" colspan="2">
+             <widget class="QPushButton" name="orbMatchButton">
+              <property name="text">
+               <string>ORB特征匹配</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item row="8" column="0">
+             <widget class="QLabel" name="labelORBMaxFeatures">
+              <property name="text">
+               <string>ORB最大特征数:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="8" column="1">
+             <widget class="QSpinBox" name="orbMaxFeaturesSpinBox">
+              <property name="minimum">
+               <number>100</number>
+              </property>
+              <property name="maximum">
+               <number>2000</number>
+              </property>
+              <property name="value">
+               <number>500</number>
+              </property>
+             </widget>
+            </item>
+            <item row="9" column="0">
+             <widget class="QLabel" name="labelORBMatchThreshold">
+              <property name="text">
+               <string>ORB匹配阈值:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="9" column="1">
+             <widget class="QDoubleSpinBox" name="orbMatchThresholdSpinBox">
+              <property name="decimals">
+               <number>2</number>
+              </property>
+              <property name="minimum">
+               <double>0.100000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>1.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>0.700000000000000</double>
+              </property>
+             </widget>
+            </item>
            </layout>
           </widget>
          </item>

@@ -93,9 +93,12 @@ endif()
 
 # 包含目录
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/ORBMatch)
 include_directories(${CMAKE_SOURCE_DIR}/DVPCamera/Demo)
 include_directories(${CMAKE_SOURCE_DIR}/DVPCamera)
 include_directories(${OpenCV_INCLUDE_DIRS})
+# 添加生成的UI头文件目录
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # 源文件
 set(SOURCES
@@ -104,6 +107,7 @@ set(SOURCES
     src/TemplateMatcher.cpp
     src/SIMDOptimization.cpp
     src/CameraPreviewDialog.cpp
+    ORBMatch/ORBFeatureMatcher.cpp
 )
 
 # 头文件
@@ -113,14 +117,17 @@ set(HEADERS
     include/SIMDOptimization.h
     include/DataStructures.h
     include/CameraPreviewDialog.h
+    ORBMatch/ORBFeatureMatcher.h
     DVPCamera/Demo/DVPCamera.h
 )
 
-# UI文件
-set(UI_FILES
-    ui/MatchToolDialog.ui
-)
-
+# UI文件 - 明确指定路径并生成头文件
+set(QT_FORMS "${CMAKE_CURRENT_SOURCE_DIR}/ui/MatchToolDialog.ui")
+if(QT_VERSION EQUAL 5)
+    QT5_WRAP_UI(QT_FORMS_HPP ${QT_FORMS})
+else()
+    QT6_WRAP_UI(QT_FORMS_HPP ${QT_FORMS})
+endif()
 
 # 设置库目录
 link_directories(
@@ -131,7 +138,7 @@ link_directories(
 )
 
 # 创建可执行文件
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${UI_FILES})
+add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${QT_FORMS_HPP})
 
 # 链接库
 target_link_libraries(${PROJECT_NAME} 
@@ -147,7 +154,7 @@ target_link_libraries(${PROJECT_NAME}
 # 设置Qt自动生成的文件
 set_target_properties(${PROJECT_NAME} PROPERTIES
     AUTOMOC ON
-    AUTOUIC ON
+    AUTOUIC OFF
     AUTORCC ON
 )
 
