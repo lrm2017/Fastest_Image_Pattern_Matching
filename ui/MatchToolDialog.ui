@@ -212,19 +212,7 @@
               </property>
              </widget>
             </item>
-            <item row="7" column="0" colspan="2">
-             <widget class="QPushButton" name="orbMatchButton">
-              <property name="text">
-               <string>ORB特征匹配</string>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>0</width>
-                <height>30</height>
-               </size>
-              </property>
-             </widget>
-            </item>
+
             <item row="8" column="0">
              <widget class="QLabel" name="labelORBMaxFeatures">
               <property name="text">
@@ -265,6 +253,33 @@
               </property>
               <property name="value">
                <double>0.700000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="10" column="0" colspan="2">
+             <widget class="QPushButton" name="orbMatchButton">
+              <property name="text">
+               <string>ORB特征匹配</string>
+              </property>
+              <property name="minimumHeight">
+               <number>40</number>
+              </property>
+              <property name="styleSheet">
+               <string>QPushButton {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 5px;
+}
+QPushButton:hover {
+    background-color: #45a049;
+}
+QPushButton:pressed {
+    background-color: #3d8b40;
+}</string>
               </property>
              </widget>
             </item>

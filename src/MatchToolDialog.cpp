@@ -316,6 +316,9 @@ void MatchToolDialog::loadSourceImage(const QString& filePath)
         QMessageBox::warning(this, "错误", "无法加载源图像: " + filePath);
         return;
     }
+
+    // 对图像做高斯模糊
+    cv::GaussianBlur(m_sourceImage, m_sourceImage, cv::Size(5, 5), 0);
     
     // 模拟MFC的LoadSrc()处理过程
     // 1. 计算缩放比例
@@ -343,7 +346,10 @@ void MatchToolDialog::loadTemplateImage(const QString& filePath)
         QMessageBox::warning(this, "错误", "无法加载模板图像: " + filePath);
         return;
     }
-    
+
+    // 对图像做高斯模糊
+    cv::GaussianBlur(m_templateImage, m_templateImage, cv::Size(5, 5), 0);
+
     // 模拟MFC的LoadDst()处理过程
     // 1. 计算缩放比例
     QRect viewRect = ui->templateView->rect();

@@ -1,6 +1,10 @@
 #include "ORBFeatureMatcher.h"
 #include <chrono>
 #include <iostream>
+#include <cmath> // For sqrt
+#include <map> // For grid distribution
+#include <set> // For unique matches
+#include <random> // For random_shuffle
 
 ORBFeatureMatcher::ORBFeatureMatcher(QObject *parent)
     : QObject(parent)
@@ -40,8 +44,130 @@ ORBMatchResult ORBFeatureMatcher::performORBMatching(
         
         std::vector<cv::KeyPoint> kpt, kps;
         cv::Mat dest, dess;
-        m_orb->detectAndCompute(sourceImage, cv::noArray(), kps, dess);
-        m_orb->detectAndCompute(templateImage, cv::noArray(), kpt, dest);
+
+        int h1 = sourceImage.rows;
+        int w1 = sourceImage.cols;
+        int h2 = templateImage.rows;
+        int w2 = templateImage.cols;
+        int max_dim = std::max(std::max(h1, w1), std::max(h2, w2));
+    
+        std::cout << "图像1尺寸: " << w1 << "x" << h1 << std::endl;
+        std::cout << "图像2尺寸: " << w2 << "x" << h2 << std::endl;
+        std::cout << "最大尺寸: " << max_dim << std::endl;
+
+        int nfeatures = 2000;
+        float scaleFactor = 1.2;
+        int nlevels = 8;
+        int edgeThreshold = 31;
+        int fastThreshold = 20;
+        double ratio_thresh = 0.75;
+        double ransac_thresh = 1.5;
+        // 自适应参数调整
+        if (1)
+        {
+            if (max_dim > 1000)  // 高分辨率图像
+            {
+                nfeatures = 4000;  // 增加特征点数量
+                scaleFactor = 1.25;  // 增加尺度因子
+                nlevels = 12;  // 增加金字塔层级
+                edgeThreshold = 20;  // 降低边缘阈值
+                fastThreshold = 12;  // 降低FAST阈值
+                ratio_thresh = 0.8;  // 放宽比率测试
+                ransac_thresh = 2.0;  // 放宽RANSAC阈值
+                std::cout << "使用高分辨率优化参数" << std::endl;
+            }
+            if (max_dim > 500)  // 中等分辨率图像
+            {
+                nfeatures = 2500;
+                scaleFactor = 1.2;
+                nlevels = 9;
+                edgeThreshold = 28;
+                fastThreshold = 18;
+                ratio_thresh = 0.75;
+                ransac_thresh = 1.2;
+                std::cout << "使用中等分辨率优化参数" << std::endl;
+            }
+            else
+            {                
+                std::cout << "使用低分辨率优化参数" << std::endl;
+            }
+        }
+
+        m_orb = cv::ORB::create(
+            nfeatures, 
+            scaleFactor, 
+            nlevels, 
+            edgeThreshold, 
+            0, 
+            2, 
+            cv::ORB::HARRIS_SCORE, 
+            31
+        );
+
+        // 先检测特征点
+        m_orb->detect(sourceImage, kps);
+        m_orb->detect(templateImage, kpt);
+        
+        // 对于高分辨率图像，进行特征点分布优化
+        if (max_dim > 1000) {
+            // 使用网格方法重新分布特征点
+            auto distributeKeypoints = [](const std::vector<cv::KeyPoint>& keypoints, 
+                                        const cv::Size& imgSize, int maxPoints = 4000) -> std::vector<cv::KeyPoint> {
+                if (keypoints.size() <= maxPoints) {
+                    return keypoints;
+                }
+                
+                int h = imgSize.height;
+                int w = imgSize.width;
+                int gridSize = static_cast<int>(std::sqrt(maxPoints * w / h)); // 根据图像比例调整网格大小
+                
+                // 创建网格
+                std::map<std::pair<int, int>, std::vector<cv::KeyPoint>> grid;
+                for (const auto& kp : keypoints) {
+                    int gridX = static_cast<int>(kp.pt.x / gridSize);
+                    int gridY = static_cast<int>(kp.pt.y / gridSize);
+                    auto gridKey = std::make_pair(gridX, gridY);
+                    
+                    if (grid.find(gridKey) == grid.end()) {
+                        grid[gridKey] = std::vector<cv::KeyPoint>();
+                    }
+                    grid[gridKey].push_back(kp);
+                }
+                
+                // 从每个网格中选择最佳特征点
+                std::vector<cv::KeyPoint> distributedKps;
+                for (const auto& gridCell : grid) {
+                    // 按响应强度排序，选择最佳的点
+                    std::vector<cv::KeyPoint> sortedCell = gridCell.second;
+                    std::sort(sortedCell.begin(), sortedCell.end(), 
+                             [](const cv::KeyPoint& a, const cv::KeyPoint& b) {
+                                 return a.response > b.response;
+                             });
+                    
+                    // 每个网格最多保留2个点
+                    distributedKps.insert(distributedKps.end(), 
+                                        sortedCell.begin(), 
+                                        sortedCell.begin() + std::min(2, static_cast<int>(sortedCell.size())));
+                }
+                
+                // 如果还是太多，随机选择
+                if (distributedKps.size() > maxPoints) {
+                    std::shuffle(distributedKps.begin(), distributedKps.end(), std::mt19937(std::random_device{}()));
+                    distributedKps.resize(maxPoints);
+                }
+                
+                return distributedKps;
+            };
+            
+            kps = distributeKeypoints(kps, cv::Size(w1, h1));
+            kpt = distributeKeypoints(kpt, cv::Size(w2, h2));
+            std::cout << "特征点分布优化后: " << kps.size() << " -> " << kpt.size() << std::endl;
+        }
+
+        // 计算特征描述符
+        m_orb->compute(sourceImage, kps, dess);
+        m_orb->compute(templateImage, kpt, dest);
+        
         auto t_orb_end = std::chrono::high_resolution_clock::now();
         double orb_ms = std::chrono::duration<double, std::milli>(t_orb_end - t_orb_start).count();
         std::cout << "ORB特征提取耗时: " << orb_ms << " ms" << std::endl;
@@ -51,44 +177,66 @@ ORBMatchResult ORBFeatureMatcher::performORBMatching(
             return result;
         }
 
+        std::cout << "图像1检测到 " << kps.size() << " 个特征点" << std::endl;
+        std::cout << "图像2检测到 " << kpt.size() << " 个特征点" << std::endl;
+
         emit matchingProgress(10);
         
-        // 2. 暴力匹配
+        // 2. 使用KNN匹配器进行比率测试（匹配Python代码逻辑）
         auto t_match_start = std::chrono::high_resolution_clock::now();
-        cv::BFMatcher matcher(cv::NORM_HAMMING);
-        std::vector<cv::DMatch> matches;
-        matcher.match(dess, dest, matches);
+        cv::BFMatcher matcher(cv::NORM_HAMMING, false); // crossCheck=false for KNN
+        
+        // KNN匹配，k=2用于Lowe's ratio test
+        std::vector<std::vector<cv::DMatch>> knn_matches;
+        matcher.knnMatch(dess, dest, knn_matches, 2);
 
         auto t_match_end = std::chrono::high_resolution_clock::now();
         double match_ms = std::chrono::duration<double, std::milli>(t_match_end - t_match_start).count();
         std::cout << "特征匹配耗时: " << match_ms << " ms" << std::endl;
 
-        if (matches.size() < 10) {
+        if (knn_matches.size() < 10) {
             std::cerr << "匹配点太少！" << std::endl;
             return result;
         }
         
         emit matchingProgress(30);
 
-        // 3. 特征匹配质量筛选
+        // 3. 应用Lowe's ratio test（匹配Python代码逻辑）
         auto t_sort_start = std::chrono::high_resolution_clock::now();
         
-        std::sort(matches.begin(), matches.end(), [](const cv::DMatch& a, const cv::DMatch& b) {
+        std::vector<cv::DMatch> good_matches;
+        for (const auto& matches : knn_matches) {
+            if (matches.size() == 2) {
+                const cv::DMatch& m = matches[0];
+                const cv::DMatch& n = matches[1];
+                if (m.distance < ratio_thresh * n.distance) { // 使用自适应比率
+                    good_matches.push_back(m);
+                }
+            }
+        }
+        
+        std::cout << "比率测试后的匹配点数量: " << good_matches.size() << std::endl;
+        
+        // 按距离排序
+        std::sort(good_matches.begin(), good_matches.end(), [](const cv::DMatch& a, const cv::DMatch& b) {
             return a.distance < b.distance;
         });
 
-        size_t N = std::min<size_t>(150, matches.size());
+        // 选择前N个最佳匹配点
+        size_t N = std::min<size_t>(maxFeatures > 0 ? maxFeatures : 1000, good_matches.size());
+        good_matches.resize(N);
+        
         std::vector<cv::Point2f> s_pts, t_pts;
-        std::vector<cv::DMatch> good_matches(matches.begin(), matches.begin() + N);
-
-        for (const auto& m : good_matches)
-        {
+        for (const auto& m : good_matches) {
             s_pts.push_back(kps[m.queryIdx].pt);
             t_pts.push_back(kpt[m.trainIdx].pt);
         }
+        
         result.goodMatches = good_matches;
         result.t_keypoints = kpt;
         result.s_keypoints = kps;
+        
+        std::cout << "有效匹配点数量: " << s_pts.size() << std::endl;
         
         emit matchingProgress(50);
 
@@ -102,7 +250,6 @@ ORBMatchResult ORBFeatureMatcher::performORBMatching(
         auto t_ransac_start = std::chrono::high_resolution_clock::now();
         
         // 改进的RANSAC参数设置
-        double ransac_thresh = 2.0;  // 降低阈值，提高精度
         int max_iterations = 2000;    // 增加最大迭代次数
         double confidence = 0.99;     // 提高置信度
         
@@ -158,6 +305,27 @@ ORBMatchResult ORBFeatureMatcher::performORBMatching(
             return result;
         }
 
+        std::cout << "RANSAC筛选后的内点数量: " << inlier_matches.size() << std::endl;
+        
+        // 检查匹配的唯一性（匹配Python代码逻辑）
+        std::set<int> unique_query_indices;
+        std::set<int> unique_train_indices;
+        std::vector<cv::DMatch> unique_matches;
+        
+        for (const auto& match : inlier_matches) {
+            if (unique_query_indices.find(match.queryIdx) == unique_query_indices.end() && 
+                unique_train_indices.find(match.trainIdx) == unique_train_indices.end()) {
+                unique_query_indices.insert(match.queryIdx);
+                unique_train_indices.insert(match.trainIdx);
+                unique_matches.push_back(match);
+            }
+        }
+        
+        std::cout << "唯一匹配点数量: " << unique_matches.size() << std::endl;
+        
+        // 更新结果中的匹配点
+        result.goodMatches = unique_matches;
+
         result.isMatched = true;
 
         // 6. 计算平均像素偏移
@@ -179,14 +347,46 @@ ORBMatchResult ORBFeatureMatcher::performORBMatching(
         double physics_shift_mm = 8.0; // 可根据需要调整
         double scale_mm_per_pix = physics_shift_mm / avg_pix_shift;
 
-        // 8. 日志输出
+        // 8. 计算匹配分数、旋转角度和缩放比例
+        result.matchScore = static_cast<double>(unique_matches.size()) / good_matches.size();
+        
+        // 从单应性矩阵中提取旋转角度和缩放比例
+        if (!H.empty()) {
+            // 提取旋转角度
+            double angle = atan2(H.at<double>(1, 0), H.at<double>(0, 0)) * 180.0 / CV_PI;
+            result.rotationAngle = angle;
+            
+            // 提取缩放比例（使用矩阵的奇异值）
+            cv::SVD svd(H);
+            double scale_x = svd.w.at<double>(0);
+            double scale_y = svd.w.at<double>(1);
+            result.scale = (scale_x + scale_y) / 2.0;
+            
+            // 计算匹配位置（使用内点的中心）
+            cv::Point2f center(0, 0);
+            for (const auto& pt : inlier_pts1) {
+                center += pt;
+            }
+            center.x /= static_cast<float>(inlier_pts1.size());
+            center.y /= static_cast<float>(inlier_pts1.size());
+            result.matchLocation = center;
+        }
+        
+        // 9. 日志输出
         std::cout << "有效内点数: " << inlier_pts1.size() << " / " << good_matches.size() << std::endl;
         std::cout << "平均像素偏移: " << avg_pix_shift << " pixels" << std::endl;
         std::cout << "物理-像素比: " << scale_mm_per_pix << " mm/pixel" << std::endl;
-
-        // result.matchScore = 1.0;
-        // result.rotationAngle = 0.0;
-        // result.scale = scale_mm_per_pix;
+        std::cout << "匹配分数: " << result.matchScore << std::endl;
+        std::cout << "旋转角度: " << result.rotationAngle << "°" << std::endl;
+        std::cout << "缩放比例: " << result.scale << std::endl;
+        
+        // 显示匹配统计信息（匹配Python代码）
+        std::cout << "\n=== 匹配统计 ===" << std::endl;
+        std::cout << "原始特征点: " << kps.size() << " -> " << kpt.size() << std::endl;
+        std::cout << "比率测试后: " << good_matches.size() << std::endl;
+        std::cout << "RANSAC筛选后: " << inlier_matches.size() << std::endl;
+        std::cout << "唯一匹配: " << unique_matches.size() << std::endl;
+        std::cout << "匹配成功率: " << (unique_matches.size() * 100.0 / good_matches.size()) << "%" << std::endl;
 
         emit matchingProgress(100);
         emit matchingCompleted(result);
